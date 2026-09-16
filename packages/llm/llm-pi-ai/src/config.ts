@@ -17,6 +17,7 @@ import type { CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provid
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import { normalizeProxyUrl } from '@deepseek-ai/dsh-http-proxy'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
@@ -179,6 +180,14 @@ export interface PiAiProviderProfile {
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * Per-route HTTP proxy URL; empty or whitespace means a direct connection,
+   * while a non-empty value routes this route's requests through the named
+   * `http://` or `https://` proxy. Each route owns its own value, so a proxy
+   * set on one provider never affects another. Global `HTTP_PROXY` routing
+   * remains for routes without a per-route proxy.
+   */
+  proxyUrl?: string
 }
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
@@ -342,6 +351,7 @@ const profile = z.object({
   requestImagePixelBudget: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
   requestImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_MAX_BYTES),
   retryPolicy: RetryPolicySchema,
+  proxyUrl: z.string(),
 })
 
 /** Runtime schema for {@link Config}. */
@@ -451,6 +461,14 @@ export function resolveProfiles(
     if (defaultInput.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" defaultInput must name at least one modality`)
     }
+    let proxyUrl: string | undefined
+    if (source.proxyUrl !== undefined) {
+      try {
+        proxyUrl = normalizeProxyUrl(source.proxyUrl)
+      } catch (error) {
+        throw new Error(`llm-pi-ai: provider "${provider}" ${(error as Error).message}`)
+      }
+    }
     // The route key, not the installed provider's own name: the directory has
     // always shown route keys, and a catalog route must not silently rename
     // itself on every configuration surface just because it gained a profile.
@@ -483,7 +501,7 @@ export function resolveProfiles(
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
       catalogError ??= error.message
     }
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, proxyUrl: _proxyUrl, ...rest } = source
     resolved.set(provider, {
       ...rest,
       provider,
@@ -494,6 +512,7 @@ export function resolveProfiles(
       requestImagePixelBudget,
       requestImageMaxBytes,
       retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
+      ...proxyUrl === undefined ? {} : { proxyUrl },
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
       configuredMaxTokens: catalog?.configuredMaxTokens ?? new Map(),

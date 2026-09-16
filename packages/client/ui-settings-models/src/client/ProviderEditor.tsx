@@ -425,6 +425,18 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               />
               {family === 'deepseek' ? <span id={`${props.provider}-endpoint-hint`} className={styles['advancedHint']}>{t('deepSeekEndpointHint')}</span> : null}
             </div>
+            <div className={styles['field']}>
+              <span className={styles['fieldLabel']}>{t('proxyUrl')}</span>
+              <input
+                className={styles['input']}
+                type="text"
+                value={stringAt(draft, 'proxyUrl') ?? ''}
+                placeholder={t('proxyUrlPlaceholder')}
+                aria-label={t('proxyUrl')}
+                disabled={disabled}
+                onChange={(event) => { setField('proxyUrl', event.target.value === '' ? undefined : event.target.value) }}
+              />
+            </div>
             {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
             {ownsIdentity

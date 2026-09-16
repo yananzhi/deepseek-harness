@@ -90,6 +90,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const [route, setRoute] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [baseURL, setBaseURL] = useState('')
+  const [proxyUrl, setProxyUrl] = useState('')
   const [protocol, setProtocol] = useState(protocols[0] ?? '')
   const [keyDraft, setKeyDraft] = useState('')
   const [models, setModels] = useState<readonly ModelDraft[]>([])
@@ -109,6 +110,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const routeTaken = taken.includes(route)
   const normalizedBaseURL = baseURL.trim()
   const baseUrlInvalid = baseURL.length > 0 && !isHttpUrl(normalizedBaseURL)
+  const normalizedProxyUrl = proxyUrl.trim()
+  const proxyUrlInvalid = normalizedProxyUrl.length > 0 && !isHttpUrl(normalizedProxyUrl)
   // Rows are checked by the same per-row validator the editor cards use, so a
   // bad row is named by its position here too. Capacities have route-level
   // fallbacks; what a route cannot default is at least one model.
@@ -119,7 +122,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   // legitimately authenticate through the provider's own ambient discovery.
   const keyValue = keyDraft.trim()
   const ready = route.length > 0 && !routeInvalid && !routeTaken
-    && normalizedBaseURL.length > 0 && !baseUrlInvalid && models.length > 0 && modelFailure === undefined
+    && normalizedBaseURL.length > 0 && !baseUrlInvalid && !proxyUrlInvalid && models.length > 0 && modelFailure === undefined
     && keyFailure === undefined
   // The one blocked gate worth a line under the form. A satisfied card says
   // nothing at all rather than printing an empty paragraph.
@@ -153,6 +156,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         ...storesKey ? { apiKeyEnv: keyRef } : {},
         api: protocol,
         baseURL: normalizedBaseURL,
+        ...normalizedProxyUrl.length === 0 ? {} : { proxyUrl: normalizedProxyUrl },
         models: models.map(model => ({ ...model })),
       }
       // `taken` is a snapshot too, so the id check alone cannot see a route
@@ -244,6 +248,20 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         />
       </div>
       {baseUrlInvalid ? <p className={styles['error']}>{t('customBaseUrlInvalid')}</p> : null}
+      <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>{t('proxyUrl')}</span>
+        <input
+          className={styles['input']}
+          type="text"
+          value={proxyUrl}
+          placeholder={t('proxyUrlPlaceholder')}
+          aria-label={t('proxyUrl')}
+          aria-invalid={proxyUrlInvalid}
+          disabled={profileDisabled}
+          onChange={(event) => { setProxyUrl(event.target.value) }}
+        />
+      </div>
+      {proxyUrlInvalid ? <p className={styles['error']}>{t('customBaseUrlInvalid')}</p> : null}
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customApi')}</span>
         <select

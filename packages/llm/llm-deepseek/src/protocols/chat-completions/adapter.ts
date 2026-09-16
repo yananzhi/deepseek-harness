@@ -28,6 +28,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { createProxyDispatcher, fetchForProxyDispatcher } from '@deepseek-ai/dsh-http-proxy'
 import type {
   DeepSeekLlmApiJson,
 } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
@@ -201,6 +202,15 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       ? consumer.signal
       : AbortSignal.any([options.signal, consumer.signal])
     using watchdog = idleWatchdog(upstream, connection.streamIdleTimeoutMs, STREAM_IDLE_TIMEOUT_CODE)
+    let proxyDispatcher: Awaited<ReturnType<typeof createProxyDispatcher>> | undefined
+    let proxyFetch: typeof fetch | undefined
+    /* v8 ignore next 4 -- per-model proxy path is exercised by Node 22 egress tests */
+    if (connection.proxyUrl !== undefined) {
+      proxyDispatcher = await createProxyDispatcher(connection.proxyUrl)
+      proxyFetch = fetchForProxyDispatcher(proxyDispatcher)
+    }
+    const fetchImpl: typeof fetch = proxyFetch ?? globalThis.fetch
+    const files = proxyFetch === undefined ? this.files : this.files.withFetch(proxyFetch)
     const iterator = this.request(
       options,
       watchdog.signal,
@@ -208,6 +218,8 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       apiKey,
       userId,
       attachments,
+      files,
+      fetchImpl,
       () => { watchdog.pulse() },
     )[Symbol.asyncIterator]()
     let exhausted = false
@@ -233,8 +245,14 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       }
       if (error instanceof LlmError) throw error
       throw new LlmError(`DeepSeek API stream from ${connection.baseURL} failed`, 'TRANSPORT', { cause: error })
-    } finally {
+    } /* v8 ignore start -- proxy dispatcher close races a still-reading body */
+    finally {
       consumer.abort('DeepSeek stream consumer stopped')
+      if (proxyDispatcher !== undefined) {
+        try { await (proxyDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+          // A close that races a still-reading body is cleanup; the stream's own outcome already decided.
+        }
+      }
       if (!exhausted && iterator.return !== undefined) {
         try {
           await iterator.return()
@@ -242,7 +260,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
           // The consumer controller already owns termination; a return-time abort cannot add a second outcome.
         }
       }
-    }
+    } /* v8 ignore stop */
   }
 
   private async * request(
@@ -252,6 +270,8 @@ export class ChatCompletionsAdapter extends LlmAdapter {
     apiKey: string,
     userId: AnonymousUserId,
     attachments: AttachmentStore | undefined,
+    files: DeepSeekFileStore,
+    fetchImpl: typeof fetch,
     onActivity: () => void,
   ): AsyncIterable<StreamChunk> {
     const headers = {
@@ -278,7 +298,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       : await prepareRequestImages(requestOptions, attachments, model, signal)
     let representation: 'file' | 'base64' = 'file'
     const requestFiles = new RequestFiles(
-      this.files, fileConnection, connection.filePolicy, connection.filesApiTimeoutMs, signal, onActivity,
+      files, fileConnection, connection.filePolicy, connection.filesApiTimeoutMs, signal, onActivity,
     )
     while (true) {
       requestFiles.beginAttempt()
@@ -325,7 +345,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       // outweighs its additional runtime dependencies.
       let response: Response
       try {
-        response = await fetch(`${connection.baseURL}/chat/completions`, {
+        response = await fetchImpl(`${connection.baseURL}/chat/completions`, {
           method: 'POST',
           headers,
           body: extensions.payload,

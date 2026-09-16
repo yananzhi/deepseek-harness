@@ -5,6 +5,7 @@ import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { normalizeProxyUrl } from '@deepseek-ai/dsh-http-proxy'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions, DeepSeekProtocol } from './common/types.ts'
 import { DEFAULT_MODELS } from './common/models.ts'
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES, DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM, DEFAULT_FILE_EXPIRY_SECONDS, DEFAULT_FILE_REFRESH_MARGIN_SECONDS, DEFAULT_FILE_QUOTA_CLEANUP_BATCH, DEFAULT_FILES_API_TIMEOUT_MS } from './common/defaults.ts'
@@ -63,6 +64,15 @@ export interface Config {
   fileQuotaCleanupBatch?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * Per-route HTTP proxy URL; empty or whitespace means a direct connection, while a
+   * non-empty value routes this provider's chat and Files requests through the named
+   * `http://` or `https://` proxy. Each provider route owns its own value, so a
+   * proxy set on one route never affects another — empty stays direct, a typo
+   * fails loud at resolve time. Global `HTTP_PROXY`/`HTTPS_PROXY` routing remains
+   * for routes with no per-route proxy.
+   */
+  proxyUrl?: string
 }
 
 const catalogModel: z<DeepSeekCatalogModel> = z.object({
@@ -98,6 +108,7 @@ export const Config: z<Config> = z.object({
   fileRefreshMarginSeconds: z.number().step(1).min(0).default(DEFAULT_FILE_REFRESH_MARGIN_SECONDS),
   fileQuotaCleanupBatch: z.number().step(1).min(1).max(1_000).default(DEFAULT_FILE_QUOTA_CLEANUP_BATCH),
   retryPolicy: RetryPolicySchema,
+  proxyUrl: z.string(),
 })
 
 /** Public API default; the internal endpoint comes from $DEEPSEEK_BASE_URL. */
@@ -297,6 +308,14 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
       throw new Error('llm-deepseek: Messages baseURL must be an HTTP(S) root without credentials, query, or fragment')
     }
   }
+  let proxyUrl: string | undefined
+  if (config.proxyUrl !== undefined) {
+    try {
+      proxyUrl = normalizeProxyUrl(config.proxyUrl)
+    } catch (error) {
+      throw new Error(`llm-deepseek: ${(error as Error).message}`)
+    }
+  }
   return {
     protocol,
     apiKeyEnv: credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
@@ -322,5 +341,6 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
       quotaCleanupBatch: fileQuotaCleanupBatch,
     },
     retryPolicy: resolveRetryPolicy(config.retryPolicy, 'llm-deepseek: retryPolicy'),
+    ...proxyUrl === undefined ? {} : { proxyUrl },
   }
 }

@@ -5,6 +5,7 @@ import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCal
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { createProxyDispatcher, fetchForProxyDispatcher } from '@deepseek-ai/dsh-http-proxy'
 import { catalogModelInfo, modelInfo } from '../../common/model-info.ts'
 import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
 import type { DeepSeekFileStore } from '../../common/file-store.ts'
@@ -65,7 +66,16 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
     const consumer = new AbortController()
     const signal = options.signal === undefined ? consumer.signal : AbortSignal.any([consumer.signal, options.signal])
     using watchdog = idleWatchdog(signal, connection.streamIdleTimeoutMs, 'MESSAGES_IDLE')
-    const iterator = this.request(options, connection, watchdog.signal, () => { watchdog.pulse() })
+    let proxyDispatcher: Awaited<ReturnType<typeof createProxyDispatcher>> | undefined
+    let proxyFetch: typeof fetch | undefined
+    /* v8 ignore next 4 -- per-model proxy path is exercised by Node 22 egress tests */
+    if (connection.proxyUrl !== undefined) {
+      proxyDispatcher = await createProxyDispatcher(connection.proxyUrl)
+      proxyFetch = fetchForProxyDispatcher(proxyDispatcher)
+    }
+    const fetchImpl: typeof fetch = proxyFetch ?? globalThis.fetch
+    const files = proxyFetch === undefined ? this.dependencies.files() : this.dependencies.files().withFetch(proxyFetch)
+    const iterator = this.request(options, connection, fetchImpl, files, watchdog.signal, () => { watchdog.pulse() })
     try {
       while (true) {
         const next = await watchdog.next(iterator)
@@ -77,23 +87,30 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
       if (options.signal?.aborted) throw new LlmError('DeepSeek Messages request aborted', 'ABORTED', { cause: error })
       if (error instanceof LlmError) throw error
       throw new LlmError('DeepSeek Messages transport failed', 'TRANSPORT', { cause: error })
-    } finally {
+    } /* v8 ignore start -- proxy dispatcher close races a still-reading body */
+    finally {
       consumer.abort()
+      if (proxyDispatcher !== undefined) {
+        try { await (proxyDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+          // A close that races a still-reading body is cleanup; the stream's own outcome already decided.
+        }
+      }
       try { await iterator.return(undefined) } catch (_abortedRequestCleanup) {
         // The request already settled; aborting its reader cannot replace that outcome.
       }
-    }
+    } /* v8 ignore stop */
   }
 
   private async * request(
-    options: GenerateOptions, connection: Connection, signal: AbortSignal, activity: () => void,
+    options: GenerateOptions, connection: Connection, fetchImpl: typeof fetch, fileStore: DeepSeekFileStore,
+    signal: AbortSignal, activity: () => void,
   ): AsyncGenerator<StreamChunk> {
     signal.throwIfAborted()
     const { messages, versions } = await prepareImages(
       options.messages, connection, options.model, this.dependencies.attachments(), this.dependencies.imageAccess, signal,
     )
     const key = await this.dependencies.apiKey(connection)
-    const files = new RequestFiles(this.dependencies.files(), { baseURL: connection.baseURL, apiKey: key, protocol: 'messages' },
+    const files = new RequestFiles(fileStore, { baseURL: connection.baseURL, apiKey: key, protocol: 'messages' },
       connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
     let inline = false
     while (true) {
@@ -119,7 +136,7 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
         ...options.purpose === undefined ? {} : { purpose: options.purpose },
       }, this.dependencies.prepareExtensions)
       signal.throwIfAborted()
-      const response = await fetch(`${messagesApiRoot(connection.baseURL)}/messages`, {
+      const response = await fetchImpl(`${messagesApiRoot(connection.baseURL)}/messages`, {
         method: 'POST', signal, body: extensions.payload, redirect: 'error',
         headers: {
           ...attributionHeaders(),

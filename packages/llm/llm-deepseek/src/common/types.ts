@@ -85,6 +85,13 @@ export interface DeepSeekConnectionOptions {
   filePolicy: DeepSeekFilePolicy
   /** Provider-owned model-request retry policy, already resolved. */
   retryPolicy: ResolvedRetryPolicy
+  /**
+   * Per-route HTTP proxy URL; `undefined` means a direct connection, matching
+   * the empty-field UI. A non-empty value is a validated `http:` or `https:` URL
+   * created by `normalizeProxyUrl` and routes this route's requests in isolation
+   * from every other route.
+   */
+  proxyUrl?: string
 }
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */

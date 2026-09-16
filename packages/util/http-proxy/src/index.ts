@@ -16,8 +16,15 @@
 
 export {
   clearedProxyEnv,
+  createProxyDispatcher,
+  fetchForProxyDispatcher,
   installProxyFromEnvironment,
   proxyEnvironmentForChild,
   proxyRouteFor,
   type ProxyRoute,
 } from './install.ts'
+export {
+  isLoopbackHost,
+  isSupportedProxyUrl,
+  normalizeProxyUrl,
+} from './policy.ts'
