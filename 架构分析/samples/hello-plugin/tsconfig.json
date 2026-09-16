@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "paths": {
+      "@deepseek-ai/cordis": ["../../../vendor/cordis/src/index.ts"],
+      "@deepseek-ai/cosmokit": ["../../../vendor/cosmokit/src/index.ts"],
+      "@deepseek-ai/schemastery": ["../../../vendor/schemastery/src/index.ts"]
+    }
+  }
+}
