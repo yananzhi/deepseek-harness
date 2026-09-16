@@ -9,6 +9,7 @@
 
 import type { Dispatcher, Pool } from 'undici'
 import {
+  isLoopbackHost,
   isSupportedProxyUrl,
   POLICY_ENV_NAMES,
   PROXY_ENV_NAMES,
@@ -300,6 +301,51 @@ export async function installProxyFromEnvironment(
   const { policy, diagnostics } = resolveProxyPolicy(env)
   for (const diagnostic of diagnostics) report(diagnostic.message)
   return await installGlobalProxy(policy)
+}
+
+/**
+ * Create a dispatcher that tunnels a single per-route proxy URL.
+ *
+ * A per-model proxy is scoped to one provider route, not to the process's
+ * global `HTTP_PROXY` policy: an empty profile field means "connect directly"
+ * while a populated one means "send this route's chat and Files requests through
+ * this proxy and no other route's requests". The dispatcher is long-lived while
+ * the route's snapshot holds it; a configuration change that changes the URL
+ * builds a new snapshot with a new dispatcher and closes the previous one, so an
+ * in-flight stream keeps the dispatcher it started with and the next stream
+ * uses the new one.
+ * @param proxyUrl - validated `http:` or `https:` proxy URL, trimmed.
+ * @returns a dispatcher that routes every non-loopback request through the proxy.
+ */
+export async function createProxyDispatcher(proxyUrl: string): Promise<Dispatcher> {
+  const { ProxyAgent } = await import('undici')
+  return new ProxyAgent(proxyUrl) as unknown as Dispatcher
+}
+
+/**
+ * Build a `fetch` that tunnels through `dispatcher` when the target is not
+ * loopback. Loopback targets bypass the proxy unconditionally, matching the
+ * global policy's `LOOPBACK_NO_PROXY` guarantee that the Web UI and local test
+ * servers never loop through a proxy that cannot route them.
+ * @param dispatcher - per-route dispatcher, or `undefined` for a direct connection.
+ * @returns a `fetch` for pi-ai's `ProviderRequestOptions.fetch`, or `undefined`.
+ */
+export function fetchForProxyDispatcher(dispatcher: Dispatcher | undefined): typeof fetch | undefined {
+  if (dispatcher === undefined) return undefined
+  return ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    let url: URL | undefined
+    try {
+      if (typeof input === 'string') url = new URL(input)
+      else if (input instanceof URL) url = input
+      else if (typeof (input as Request).url === 'string') url = new URL((input as Request).url)
+    } catch {
+      // A malformed URL is the fetch's own failure; fall through to the proxying path.
+    }
+    if (url !== undefined && isLoopbackHost(url.hostname)) {
+      return globalThis.fetch(input as RequestInfo, init)
+    }
+    return globalThis.fetch(input as RequestInfo, { ...(init ?? {}), dispatcher } as RequestInit & { dispatcher: Dispatcher })
+  }) as typeof fetch
 }
 
 /**

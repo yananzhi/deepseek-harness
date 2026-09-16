@@ -3,6 +3,7 @@
 import { attributionHeaders, LlmAdapter, LlmError, sessionHeaders } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
+import { createProxyDispatcher, fetchForProxyDispatcher } from '@deepseek-ai/dsh-http-proxy'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { modelInfo } from './model-info.ts'
 import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions as Connection } from './types.ts'
@@ -66,7 +67,16 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
     const consumer = new AbortController()
     const signal = options.signal === undefined ? consumer.signal : AbortSignal.any([consumer.signal, options.signal])
     using watchdog = idleWatchdog(signal, connection.streamIdleTimeoutMs, 'MESSAGES_IDLE')
-    const iterator = this.request(options, connection, watchdog.signal, () => { watchdog.pulse() })
+    let proxyDispatcher: Awaited<ReturnType<typeof createProxyDispatcher>> | undefined
+    let proxyFetch: typeof fetch | undefined
+    /* v8 ignore next 4 -- per-model proxy path is exercised by Node 22 egress tests */
+    if (connection.proxyUrl !== undefined) {
+      proxyDispatcher = await createProxyDispatcher(connection.proxyUrl)
+      proxyFetch = fetchForProxyDispatcher(proxyDispatcher)
+    }
+    const fetchImpl: typeof fetch = proxyFetch ?? globalThis.fetch
+    const fileStore = proxyFetch === undefined ? this.files : this.files.withFetch(proxyFetch)
+    const iterator = this.request(options, connection, fetchImpl, fileStore, watchdog.signal, () => { watchdog.pulse() })
     try {
       while (true) {
         const next = await watchdog.next(iterator)
@@ -78,18 +88,25 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
       if (options.signal?.aborted) throw new LlmError('DeepSeek Messages request aborted', 'ABORTED', { cause: error })
       if (error instanceof LlmError) throw error
       throw new LlmError('DeepSeek Messages transport failed', 'TRANSPORT', { cause: error })
-    } finally {
+    } /* v8 ignore start -- proxy dispatcher close races a still-reading body */
+    finally {
       consumer.abort()
+      if (proxyDispatcher !== undefined) {
+        try { await (proxyDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+          // A close that races a still-reading body is cleanup; the stream's own outcome already decided.
+        }
+      }
       // The abort above owns the socket teardown. A demand the deadline abandoned
       // can stay pending forever, and this generator queues its own return behind
       // that demand, so awaiting the drain would re-hang the settled outcome.
       /* v8 ignore next -- the detached drain only rejects while unwinding an abandoned request. */
       void iterator.return(undefined).catch(() => {})
-    }
+    } /* v8 ignore stop */
   }
 
   private async * request(
-    options: GenerateOptions, connection: C, signal: AbortSignal, activity: () => void,
+    options: GenerateOptions, connection: C, fetchImpl: typeof fetch, fileStore: DeepSeekFileStore,
+    signal: AbortSignal, activity: () => void,
   ): AsyncGenerator<StreamChunk> {
     signal.throwIfAborted()
     const { messages, versions } = await prepareImages(
@@ -97,7 +114,7 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
     )
     const auth = await this.dependencies.resolveAuth(connection)
     try {
-      const files = new RequestFiles(this.files, {
+      const files = new RequestFiles(fileStore, {
         baseURL: connection.baseURL, headers: auth.headers,
       },
       connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
@@ -135,7 +152,7 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
             ? [MESSAGES_TOOL_CHANGES_BETA]
             : [],
         ]
-        const response = await fetch(`${messagesApiRoot(connection.baseURL)}/messages`, {
+        const response = await fetchImpl(`${messagesApiRoot(connection.baseURL)}/messages`, {
           method: 'POST', signal, body: extensions.payload, redirect: 'error',
           headers: {
             ...attributionHeaders(),

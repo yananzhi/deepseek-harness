@@ -12,7 +12,7 @@ describe('sessionHeaders', () => {
   })
 
   it('sends both the gateway-documented and the native routing header', () => {
-    expect(sessionHeaders(brandString('child-session'))).toEqual({
+    expect(sessionHeaders(brandString('child-session') as never)).toEqual({
       [OPENCODE_SESSION_HEADER]: 'child-session',
       [HARNESS_SESSION_HEADER]: 'child-session',
     })

@@ -269,6 +269,7 @@ export function apply(ctx: Context, config: Config): void {
     return {
       headers: profile.headers,
       resolveApiKey: () => resolveApiKey(provider, profile),
+      ...profile.proxyUrl === undefined ? {} : { proxyUrl: profile.proxyUrl },
     }
   }
   // Interrogating an endpoint is a configuration-time action over a draft, so
