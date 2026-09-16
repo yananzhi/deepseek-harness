@@ -327,12 +327,18 @@ export async function createProxyDispatcher(proxyUrl: string): Promise<Dispatche
  * loopback. Loopback targets bypass the proxy unconditionally, matching the
  * global policy's `LOOPBACK_NO_PROXY` guarantee that the Web UI and local test
  * servers never loop through a proxy that cannot route them.
+ *
+ * The proxy dispatcher is an `undici` `ProxyAgent` from the npm `undici`
+ * package, so the `fetch` that carries it must be the `fetch` from the *same*
+ * `undici` instance — `globalThis.fetch` (Node's built-in undici) is a
+ * different copy and rejects the dispatcher as incompatible
+ * (`Connection error. This may be caused by passing an undici dispatcher...`).
  * @param dispatcher - per-route dispatcher, or `undefined` for a direct connection.
  * @returns a `fetch` for pi-ai's `ProviderRequestOptions.fetch`, or `undefined`.
  */
 export function fetchForProxyDispatcher(dispatcher: Dispatcher | undefined): typeof fetch | undefined {
   if (dispatcher === undefined) return undefined
-  return ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     let url: URL | undefined
     try {
       if (typeof input === 'string') url = new URL(input)
@@ -344,8 +350,12 @@ export function fetchForProxyDispatcher(dispatcher: Dispatcher | undefined): typ
     if (url !== undefined && isLoopbackHost(url.hostname)) {
       return globalThis.fetch(input as RequestInfo, init)
     }
-    return globalThis.fetch(input as RequestInfo, { ...(init ?? {}), dispatcher } as RequestInit & { dispatcher: Dispatcher })
-  }) as typeof fetch
+    const { fetch } = await import('undici')
+    return (fetch as unknown as typeof globalThis.fetch)(
+      input as RequestInfo,
+      { ...(init ?? {}), dispatcher } as RequestInit & { dispatcher: Dispatcher },
+    )
+  }) as unknown as typeof fetch
 }
 
 /**
