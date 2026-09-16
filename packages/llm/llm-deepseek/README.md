@@ -140,7 +140,7 @@ The plugin is built on one explicit resolve step and one registration fact. `res
 
 ### Wire flow
 
-One `stream()` call normally makes one model request: resolve deterministic request images, prefer Files ids, prepare any registered top-level request extensions, fetch from the resolved `baseURL`, accept extension transactions after HTTP 2xx, and translate the SSE stream into the harness protocol. File-resolution failure makes the first request inline; a provider stale-file response permits one replacement attempt, also inline if replacement resolution fails. Every model and Files call carries shared attribution. Model requests also carry the stable anonymous user id outside model input, plus a session id when present. Reasoning history is serialized back when required, and cache accounting maps DeepSeek's cache-hit metrics into harness usage.
+One `stream()` call normally makes one model request: resolve deterministic request images, prefer Files ids, prepare any registered top-level request extensions, fetch from the resolved `baseURL`, accept extension transactions after HTTP 2xx, and translate the SSE stream into the harness protocol. File-resolution failure makes the first request inline; a provider stale-file response permits one replacement attempt, also inline if replacement resolution fails. Every model and Files call carries shared attribution. Model requests also carry the stable anonymous user id outside model input, and a request carrying a session sends it as `x-opencode-session` and `x-deepseek-harness-session-id` headers. Reasoning history is serialized back when required, and cache accounting maps DeepSeek's cache-hit metrics into harness usage.
 
 </details>
 

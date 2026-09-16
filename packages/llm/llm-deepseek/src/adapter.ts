@@ -1,6 +1,6 @@
 /** Direct Messages transport with one cancellable lifecycle per model request. */
 
-import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, LlmAdapter, LlmError, sessionHeaders } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -144,7 +144,7 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
             'anthropic-version': '2023-06-01',
             ...betas.length === 0 ? {} : { 'anthropic-beta': betas.join(',') },
             'x-deepseek-harness-user-id': this.dependencies.resolveUserId(),
-            ...options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) },
+            ...sessionHeaders(options.sessionId),
             ...options.purpose === 'compaction' ? { 'x-deepseek-harness-compact': '1' } : {},
           },
         })
