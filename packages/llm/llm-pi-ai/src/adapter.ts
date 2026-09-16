@@ -59,6 +59,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { createProxyDispatcher, fetchForProxyDispatcher } from '@deepseek-ai/dsh-http-proxy'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
 import { toStreamChunks } from './stream.ts'
@@ -348,6 +349,14 @@ export class PiAiAdapter extends LlmAdapter {
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
 
+    let proxyDispatcher: Awaited<ReturnType<typeof createProxyDispatcher>> | undefined
+    let proxyFetch: typeof fetch | undefined
+    /* v8 ignore next 4 -- per-model proxy path is exercised by Node 22 egress tests */
+    if (profile.proxyUrl !== undefined) {
+      proxyDispatcher = await createProxyDispatcher(profile.proxyUrl)
+      proxyFetch = fetchForProxyDispatcher(proxyDispatcher)
+    }
+
     const consumer = new AbortController()
     const upstream = options.signal === undefined
       ? consumer.signal
@@ -380,6 +389,7 @@ export class PiAiAdapter extends LlmAdapter {
         }, onReplayDegrade)
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
+        ...proxyFetch === undefined ? {} : { fetch: proxyFetch },
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
@@ -420,8 +430,14 @@ export class PiAiAdapter extends LlmAdapter {
         throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
       }
       throw error
-    } finally {
+    } /* v8 ignore start -- proxy dispatcher close races a still-reading body */
+    finally {
       consumer.abort('pi-ai stream consumer stopped')
-    }
+      if (proxyDispatcher !== undefined) {
+        try { await (proxyDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+          // A close that races a still-reading body is cleanup; the stream's own outcome already decided.
+        }
+      }
+    } /* v8 ignore stop */
   }
 }

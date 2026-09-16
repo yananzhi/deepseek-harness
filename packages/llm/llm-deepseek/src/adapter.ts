@@ -36,6 +36,7 @@ import type {
   DeepSeekLlmApiJson,
   PreparedDeepSeekLlmApiExtensions,
 } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
+import { createProxyDispatcher, fetchForProxyDispatcher } from '@deepseek-ai/dsh-http-proxy'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { ImageWireLocation, RequestDefaults } from './serialize.ts'
 import { deepSeekImageRequestPricing, resolveRequestImagePolicy } from './request-pricing.ts'
@@ -116,6 +117,13 @@ export interface DeepSeekConnectionOptions {
   filePolicy: DeepSeekFilePolicy
   /** Provider-owned model-request retry policy, already resolved. */
   retryPolicy: ResolvedRetryPolicy
+  /**
+   * Per-route HTTP proxy URL; `undefined` means a direct connection, matching
+   * the empty-field UI. A non-empty value is a validated `http:` or `https:` URL
+   * created by `normalizeProxyUrl` and routes this route's requests in isolation
+   * from every other route.
+   */
+  proxyUrl?: string
 }
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
@@ -548,6 +556,16 @@ export class DeepSeekAdapter extends LlmAdapter {
         : {},
     }
 
+    let proxyDispatcher: Awaited<ReturnType<typeof createProxyDispatcher>> | undefined
+    let proxyFetch: typeof fetch | undefined
+    /* v8 ignore next 4 -- per-model proxy path is exercised by Node 22 egress tests */
+    if (connection.proxyUrl !== undefined) {
+      proxyDispatcher = await createProxyDispatcher(connection.proxyUrl)
+      proxyFetch = fetchForProxyDispatcher(proxyDispatcher)
+    }
+    const fetchImpl: typeof fetch = proxyFetch ?? globalThis.fetch
+    const files = proxyFetch !== undefined ? this.files.withFetch(proxyFetch) : this.files
+
     const fileConnection = { baseURL: connection.baseURL, apiKey }
     const model = connection.models.find(entry => entry.id === options.model)
     const policy = model === undefined ? undefined : resolveRequestImagePolicy(model)
@@ -570,144 +588,153 @@ export class DeepSeekAdapter extends LlmAdapter {
       : await prepareRequestImages(requestOptions, attachments, model, signal)
     let representation: 'file' | 'base64' = 'file'
     let fileAttempt = 0
-    while (true) {
-      const usedFiles: UsedRequestFile[] = []
-      let body: WireRequest
-      if (attachments === undefined) {
-        body = serializeRequest(requestOptions, connection.defaults)
-      } else if (representation === 'base64') {
-        body = await serializeRequestWithImages(requestOptions, {
-          representation: { kind: 'base64' },
-          requestImages,
-          ...imageAccessOptions,
-          maxRequestImageBytes: connection.maxInlineRequestImageBytes,
-          maxImagesPerRequest: connection.maxImagesPerRequest,
-          byteQuantum: connection.inlineImageOffloadByteQuantum,
-          countQuantum: connection.imageOffloadCountQuantum,
-        }, connection.defaults)
-      } else {
-        try {
+    try {
+      while (true) {
+        const usedFiles: UsedRequestFile[] = []
+        let body: WireRequest
+        if (attachments === undefined) {
+          body = serializeRequest(requestOptions, connection.defaults)
+        } else if (representation === 'base64') {
           body = await serializeRequestWithImages(requestOptions, {
-            representation: {
-              kind: 'file',
-              resolveFileId: async (version, _block, location) => {
-                using filesDeadline = deadline(signal, connection.filesApiTimeoutMs, FILES_API_TIMEOUT_CODE)
-                let resolved: Awaited<ReturnType<DeepSeekFileStore['ensureUploaded']>>
-                try {
-                  resolved = await this.files.ensureUploaded(
-                    version,
-                    fileConnection,
-                    connection.filePolicy,
-                    filesDeadline.signal,
-                  )
-                } catch (error: unknown) {
-                  if (signal.aborted) throw error
-                  throw new FileResolutionFailure(error)
-                }
-                onActivity()
-                usedFiles.push({ version, fileId: resolved.record.fileId, location })
-                return resolved.record.fileId
-              },
-            },
+            representation: { kind: 'base64' },
             requestImages,
             ...imageAccessOptions,
-            maxRequestImageBytes: connection.maxRequestFilesBytes,
+            maxRequestImageBytes: connection.maxInlineRequestImageBytes,
             maxImagesPerRequest: connection.maxImagesPerRequest,
-            byteQuantum: connection.imageOffloadByteQuantum,
+            byteQuantum: connection.inlineImageOffloadByteQuantum,
             countQuantum: connection.imageOffloadCountQuantum,
           }, connection.defaults)
-        } catch (error: unknown) {
-          if (!(error instanceof FileResolutionFailure)) throw error
-          representation = 'base64'
-          continue
-        }
-      }
-      let extensions: PreparedDeepSeekLlmApiExtensions
-      try {
-        extensions = await this.config.prepareExtensions({
-          body: body as unknown as Readonly<Record<string, DeepSeekLlmApiJson>>,
-          signal,
-          ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
-          ...options.purpose === undefined ? {} : { purpose: options.purpose },
-        })
-      } catch (error) {
-        throw new LlmError('DeepSeek request extension preparation failed', 'REQUEST_EXTENSION', { cause: error })
-      }
-      for (const field of Object.keys(extensions.fields)) {
-        if (Object.hasOwn(body, field)) {
-          throw new LlmError(`DeepSeek request extension field ${JSON.stringify(field)} collides with the base request`, 'REQUEST_EXTENSION')
-        }
-      }
-      // Prepared outside the try so the TRANSPORT label below covers exactly the
-      // transport boundary, never a serialization failure.
-      const payload = JSON.stringify({ ...body, ...extensions.fields })
-
-      // TODO(http): adopt the Cordis HTTP service when shared transport configuration
-      // outweighs its additional runtime dependencies.
-      let response: Response
-      try {
-        response = await fetch(`${connection.baseURL}/chat/completions`, {
-          method: 'POST',
-          headers,
-          body: payload,
-          signal,
-        })
-      } catch (error: unknown) {
-        if (signal.aborted) throw error
-        throw new LlmError(
-          `DeepSeek API request to ${connection.baseURL} failed`,
-          'TRANSPORT',
-          { cause: error },
-        )
-      }
-
-      if (!response.ok) {
-        let message = `DeepSeek API error (HTTP ${response.status})`
-        let providerError: WireError['error']
-        const rawResponse = await response.text()
-        try {
-          const parsed = JSON.parse(rawResponse) as WireError
-          providerError = parsed.error
-          if (providerError?.message) message = providerError.message
-        } catch {
-          // The HTTP status remains authoritative when a gateway returns malformed JSON.
-        }
-        const detail = [providerError?.code, providerError?.type, providerError?.message]
-          .filter((field): field is string => typeof field === 'string')
-          .join(' ')
-        const staleFile = usedFiles.length > 0 && providerRejectedFileId(detail)
-        if (staleFile) {
-          await Promise.all(staleMappings(usedFiles, detail).map(file => (
-            this.files.invalidate(file.version, file.fileId, fileConnection)
-          )))
-          if (fileAttempt === 0) {
-            fileAttempt += 1
+        } else {
+          try {
+            body = await serializeRequestWithImages(requestOptions, {
+              representation: {
+                kind: 'file',
+                resolveFileId: async (version, _block, location) => {
+                  using filesDeadline = deadline(signal, connection.filesApiTimeoutMs, FILES_API_TIMEOUT_CODE)
+                  let resolved: Awaited<ReturnType<DeepSeekFileStore['ensureUploaded']>>
+                  try {
+                    resolved = await files.ensureUploaded(
+                      version,
+                      fileConnection,
+                      connection.filePolicy,
+                      filesDeadline.signal,
+                    )
+                  } catch (error: unknown) {
+                    if (signal.aborted) throw error
+                    throw new FileResolutionFailure(error)
+                  }
+                  onActivity()
+                  usedFiles.push({ version, fileId: resolved.record.fileId, location })
+                  return resolved.record.fileId
+                },
+              },
+              requestImages,
+              ...imageAccessOptions,
+              maxRequestImageBytes: connection.maxRequestFilesBytes,
+              maxImagesPerRequest: connection.maxImagesPerRequest,
+              byteQuantum: connection.imageOffloadByteQuantum,
+              countQuantum: connection.imageOffloadCountQuantum,
+            }, connection.defaults)
+          } catch (error: unknown) {
+            if (!(error instanceof FileResolutionFailure)) throw error
+            representation = 'base64'
             continue
           }
         }
-        if (response.status === 400 && usedFiles.length > 0 && providerRejectedNormalizedImage(detail)) {
-          message = normalizedImageDiagnostic(usedFiles, message, detail)
+        let extensions: PreparedDeepSeekLlmApiExtensions
+        try {
+          extensions = await this.config.prepareExtensions({
+            body: body as unknown as Readonly<Record<string, DeepSeekLlmApiJson>>,
+            signal,
+            ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
+            ...options.purpose === undefined ? {} : { purpose: options.purpose },
+          })
+        } catch (error) {
+          throw new LlmError('DeepSeek request extension preparation failed', 'REQUEST_EXTENSION', { cause: error })
         }
-        const delay = providerRetryAfterMs(response.headers.get('retry-after'))
-        const id = requestId(response.headers)
-        throw new LlmError(message, httpErrorCode(response.status, providerError), {
-          cause: new Error(rawResponse.length > 0 ? rawResponse : `DeepSeek HTTP ${response.status}`),
-          status: response.status,
-          ...delay === undefined ? {} : { providerRetryAfterMs: delay },
-          ...id === undefined ? {} : { requestId: id },
-        })
-      }
-      try {
-        await extensions.accept()
-      } catch (error) {
-        throw new LlmError('DeepSeek request extension acceptance failed', 'REQUEST_EXTENSION', { cause: error })
-      }
-      if (!response.body) {
-        throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')
-      }
+        for (const field of Object.keys(extensions.fields)) {
+          if (Object.hasOwn(body, field)) {
+            throw new LlmError(`DeepSeek request extension field ${JSON.stringify(field)} collides with the base request`, 'REQUEST_EXTENSION')
+          }
+        }
+        // Prepared outside the try so the TRANSPORT label below covers exactly the
+        // transport boundary, never a serialization failure.
+        const payload = JSON.stringify({ ...body, ...extensions.fields })
 
-      yield* translate(parseSse(response.body, onActivity))
-      return
-    }
+        // TODO(http): adopt the Cordis HTTP service when shared transport configuration
+        // outweighs its additional runtime dependencies.
+        let response: Response
+        try {
+          response = await fetchImpl(`${connection.baseURL}/chat/completions`, {
+            method: 'POST',
+            headers,
+            body: payload,
+            signal,
+          })
+        } catch (error: unknown) {
+          if (signal.aborted) throw error
+          throw new LlmError(
+            `DeepSeek API request to ${connection.baseURL} failed`,
+            'TRANSPORT',
+            { cause: error },
+          )
+        }
+
+        if (!response.ok) {
+          let message = `DeepSeek API error (HTTP ${response.status})`
+          let providerError: WireError['error']
+          const rawResponse = await response.text()
+          try {
+            const parsed = JSON.parse(rawResponse) as WireError
+            providerError = parsed.error
+            if (providerError?.message) message = providerError.message
+          } catch {
+            // The HTTP status remains authoritative when a gateway returns malformed JSON.
+          }
+          const detail = [providerError?.code, providerError?.type, providerError?.message]
+            .filter((field): field is string => typeof field === 'string')
+            .join(' ')
+          const staleFile = usedFiles.length > 0 && providerRejectedFileId(detail)
+          if (staleFile) {
+            await Promise.all(staleMappings(usedFiles, detail).map(file => (
+              files.invalidate(file.version, file.fileId, fileConnection)
+            )))
+            if (fileAttempt === 0) {
+              fileAttempt += 1
+              continue
+            }
+          }
+          if (response.status === 400 && usedFiles.length > 0 && providerRejectedNormalizedImage(detail)) {
+            message = normalizedImageDiagnostic(usedFiles, message, detail)
+          }
+          const delay = providerRetryAfterMs(response.headers.get('retry-after'))
+          const id = requestId(response.headers)
+          throw new LlmError(message, httpErrorCode(response.status, providerError), {
+            cause: new Error(rawResponse.length > 0 ? rawResponse : `DeepSeek HTTP ${response.status}`),
+            status: response.status,
+            ...delay === undefined ? {} : { providerRetryAfterMs: delay },
+            ...id === undefined ? {} : { requestId: id },
+          })
+        }
+        try {
+          await extensions.accept()
+        } catch (error) {
+          throw new LlmError('DeepSeek request extension acceptance failed', 'REQUEST_EXTENSION', { cause: error })
+        }
+        if (!response.body) {
+          throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')
+        }
+
+        yield* translate(parseSse(response.body, onActivity))
+        return
+      }
+    } /* v8 ignore start -- proxy dispatcher close races a still-reading body */
+    finally {
+      if (proxyDispatcher !== undefined) {
+        try { await (proxyDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+          // A close that races a still-reading body is cleanup; the stream's own outcome already decided.
+        }
+      }
+    } /* v8 ignore stop */
   }
 }

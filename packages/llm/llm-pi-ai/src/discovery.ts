@@ -254,6 +254,8 @@ export interface StoredModelDiscoveryProfile {
   readonly headers: Readonly<Record<string, string>> | undefined
   /** Resolve the named route's credential only when the draft carries none. */
   readonly resolveApiKey: () => Promise<string | undefined>
+  /** Per-route proxy URL for this stored route, when one is configured. */
+  readonly proxyUrl?: string
 }
 
 /**
@@ -313,6 +315,16 @@ export async function discoverModels(
   const supplied = request.apiKey ?? await stored?.resolveApiKey()
   const apiKey = supplied === undefined ? undefined : usableProbeKey(supplied)
   let response: Response
+  let discoveryDispatcher: { close(): Promise<void> } | undefined
+  let discoveryFetch: typeof fetch | undefined
+  /* v8 ignore next 5 -- per-model proxy discovery is exercised by Node 22 */
+  if (stored?.proxyUrl !== undefined) {
+    const { createProxyDispatcher, fetchForProxyDispatcher } = await import('@deepseek-ai/dsh-http-proxy')
+    const dispatcher = await createProxyDispatcher(stored.proxyUrl)
+    discoveryDispatcher = dispatcher as unknown as { close(): Promise<void> }
+    discoveryFetch = fetchForProxyDispatcher(dispatcher)
+  }
+  const fetchImpl: typeof fetch = discoveryFetch ?? globalThis.fetch
   try {
     const headers = new Headers(stored?.headers === undefined ? undefined : Object.entries(stored.headers))
     headers.set('accept', 'application/json')
@@ -323,18 +335,30 @@ export async function discoverModels(
       headers.set('authorization', `Bearer ${apiKey}`)
     }
     for (const [name, value] of Object.entries(attributionHeaders())) headers.set(name, value)
-    response = await fetch(url, {
+    response = await fetchImpl(url, {
       method: 'GET',
       headers,
       ...request.signal === undefined ? {} : { signal: request.signal },
     })
   } catch (error: unknown) {
+    /* v8 ignore next 4 -- dispatcher close on fetch failure is best-effort */
+    if (discoveryDispatcher !== undefined) {
+      try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+        // Discovery dispatcher close racing a fetch failure is cleanup.
+      }
+    }
     if (request.signal?.aborted) {
       throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
     }
     throw new LlmError(`could not reach ${url}`, 'DISCOVERY_FAILED', { cause: error })
   }
   if (!response.ok) {
+    /* v8 ignore next 4 -- dispatcher close on non-2xx */
+    if (discoveryDispatcher !== undefined) {
+      try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+        // Non-2xx response needs no body stream; close the proxy dispatcher.
+      }
+    }
     throw new LlmError(
       `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
       'DISCOVERY_FAILED',
@@ -344,6 +368,12 @@ export async function discoverModels(
   try {
     text = await readBounded(response, url)
   } catch (error: unknown) {
+    /* v8 ignore next 4 -- dispatcher close on body read failure */
+    if (discoveryDispatcher !== undefined) {
+      try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+        // Body read failure still owns dispatcher cleanup.
+      }
+    }
     // Cancellation during the body read rejects with the abort reason, which
     // may be any value; the caller gets the same coded failure it would have
     // for a cancellation before the request went out.
@@ -351,6 +381,12 @@ export async function discoverModels(
       throw new LlmError('model discovery aborted by caller', 'ABORTED', { cause: error })
     }
     throw error
+  }
+  /* v8 ignore next 4 -- dispatcher close on success */
+  if (discoveryDispatcher !== undefined) {
+    try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+      // Successful read still closes the per-discovery proxy dispatcher.
+    }
   }
   let body: unknown
   try {

@@ -123,11 +123,27 @@ export class DeepSeekFileStore {
     this.fetchImpl = options.fetch
   }
 
-  private client(connection: DeepSeekFileConnection): DeepSeekFilesClient {
+  /**
+   * A sibling store that shares this store's durable index and clock but uses
+   * a different `fetch` for one operation's network scope — exactly what a
+   * per-route proxy needs: the index is route-keyed by baseURL+key scope, so
+   * sharing it keeps reuse correct while the transport is swapped per request
+   * snapshot without racing a global mutable fetch.
+   * @param fetch - the per-operation fetch (proxy-tunneled or direct).
+   * @returns a store whose uploads reuse the same durable mappings.
+   */
+  withFetch(fetch: typeof globalThis.fetch | undefined): DeepSeekFileStore {
+    if (fetch === this.fetchImpl) return this
+    if (fetch === undefined) return new DeepSeekFileStore({ index: this.index, now: this.now })
+    return new DeepSeekFileStore({ index: this.index, now: this.now, fetch })
+  }
+
+  private client(connection: DeepSeekFileConnection, fetchImpl?: typeof fetch): DeepSeekFilesClient {
+    const fetch = fetchImpl ?? this.fetchImpl
     return new DeepSeekFilesClient({
       baseURL: connection.baseURL,
       apiKey: connection.apiKey,
-      ...this.fetchImpl === undefined ? {} : { fetch: this.fetchImpl },
+      ...fetch === undefined ? {} : { fetch },
     })
   }
 

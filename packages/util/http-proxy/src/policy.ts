@@ -183,6 +183,36 @@ export function isSupportedProxyUrl(value: string): boolean {
 }
 
 /**
+ * Normalize one per-model proxy URL typed into a provider profile.
+ *
+ * Empty or whitespace-only input means "no proxy" and resolves to `undefined`
+ * rather than to a stored empty string, which is how the adapter distinguishes
+ * "use a proxy" from "connect directly". A non-empty value is trimmed and
+ * validated as an `http:` or `https:` URL; a SOCKS or malformed URL fails loud
+ * so a typo does not silently keep a model direct while the operator believes
+ * it proxies.
+ * @param value - the raw value from configuration, or `undefined` when absent.
+ * @returns the trimmed, validated proxy URL, or `undefined` for a direct connection.
+ * @throws Error when the value is non-empty but not a supported proxy URL.
+ */
+export function normalizeProxyUrl(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = URL.parse(trimmed)
+  if (parsed === null) {
+    throw new Error(`proxy URL "${value}" is not a valid URL; use an http:// or https:// proxy URL or leave the field blank for a direct connection`)
+  }
+  if (SOCKS_PROTOCOLS.has(parsed.protocol)) {
+    throw new Error(`proxy URL "${value}" names a SOCKS proxy, which is not supported; use an http:// or https:// proxy URL or leave the field blank`)
+  }
+  if (!SUPPORTED_PROTOCOLS.has(parsed.protocol)) {
+    throw new Error(`proxy URL "${value}" uses the unsupported ${parsed.protocol}// scheme; use an http:// or https:// proxy URL or leave the field blank`)
+  }
+  return trimmed
+}
+
+/**
  * Resolve one scheme's proxy from its own slot, then the fallbacks — but only when the scheme's own
  * slot was empty. A rejected slot keeps that scheme direct, so the diagnostic and the route agree.
  *
