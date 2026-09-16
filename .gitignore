@@ -44,3 +44,10 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+# Local launch helpers (untracked by design).
+/start-dsh.ps1
+/stop-dsh.ps1
+/start.bat
+/stop.bat
+/restart.bat

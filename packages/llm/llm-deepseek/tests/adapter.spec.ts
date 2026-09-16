@@ -360,6 +360,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
     expect(server.headers[0]?.['x-deepseek-harness-user-id']).toBe(getOrCreateAnonymousUserId())
     expect(server.headers[0]).not.toHaveProperty('x-deepseek-harness-session-id')
+    expect(server.headers[0]).not.toHaveProperty('x-opencode-session')
     expect(server.headers[0]).not.toHaveProperty('http-referer')
     expect(server.headers[0]).not.toHaveProperty('x-openrouter-title')
     expect(server.headers[0]).not.toHaveProperty('x-openrouter-categories')
@@ -1137,6 +1138,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     })
 
     expect(server.headers[0]?.['x-deepseek-harness-session-id']).toBe('child-session')
+    expect(server.headers[0]?.['x-opencode-session']).toBe('child-session')
     expect(server.headers[0]?.['x-deepseek-harness-user-id']).toBe(getOrCreateAnonymousUserId())
   })
 

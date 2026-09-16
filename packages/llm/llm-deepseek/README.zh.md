@@ -122,7 +122,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 ### 协议流程
 
-一次 `stream()` 调用通常发一条 chat 请求：解析确定性请求图片、优先使用 Files id、准备所有已注册顶层请求扩展、向解析后的 `baseURL` 发起 fetch、在 HTTP 2xx 后接受扩展事务，并把 SSE 流翻译为 harness 协议。文件解析失败会让首条 chat 使用内联模式；提供方的陈旧文件响应允许一次替换尝试，且替换解析失败时也使用内联模式。每条 chat 与 Files 调用都在模型输入之外携带共享归因和稳定匿名用户 id，会话调用还携带 session id。推理历史会按需序列化回请求，缓存计量则把 DeepSeek 的缓存命中指标映射进 harness 用量桶。
+一次 `stream()` 调用通常发一条 chat 请求：解析确定性请求图片、优先使用 Files id、准备所有已注册顶层请求扩展、向解析后的 `baseURL` 发起 fetch、在 HTTP 2xx 后接受扩展事务，并把 SSE 流翻译为 harness 协议。文件解析失败会让首条 chat 使用内联模式；提供方的陈旧文件响应允许一次替换尝试，且替换解析失败时也使用内联模式。每条 chat 与 Files 调用都在模型输入之外携带共享归因和稳定匿名用户 id，会话调用还以 `x-opencode-session` 与 `x-deepseek-harness-session-id` 头携带 session id。推理历史会按需序列化回请求，缓存计量则把 DeepSeek 的缓存命中指标映射进 harness 用量桶。
 
 </details>
 

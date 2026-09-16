@@ -44,6 +44,7 @@ import {
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
+  sessionHeaders,
 } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
@@ -384,8 +385,9 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        // Harness-owned and therefore win collisions. The loop-stamped
+        // session routes the conversation, so it wins too.
+        headers: { ...requestHeaders(profile.headers), ...sessionHeaders(options.sessionId) },
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false

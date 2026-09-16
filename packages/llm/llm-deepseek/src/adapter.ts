@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, sessionHeaders } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -542,9 +542,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       'accept': 'text/event-stream',
       ...attributionHeaders(),
       'x-deepseek-harness-user-id': String(userId),
-      ...options.sessionId !== undefined
-        ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
-        : {},
+      ...sessionHeaders(options.sessionId),
       ...options.purpose === 'compaction'
         ? { 'x-deepseek-harness-compact': '1' }
         : {},
