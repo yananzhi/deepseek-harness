@@ -14,22 +14,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Node path from .env (node_path=...), fallback to default install.
-$envNodePath = $null
+# Node discovery: prefer node on PATH; else node_dir=... from .env (see
+# .env_example); else the default install location. Never node_path/NODE_PATH:
+# app-boot rejects that name in any .env file, and exporting it would perturb
+# Node module resolution for the child process.
+$NodeDir = $null
 if (Test-Path "$PSScriptRoot/.env") {
-  Get-Content "$PSScriptRoot/.env" | Where-Object { $_ -match '^\s*node_path\s*=' } | ForEach-Object {
+  Get-Content "$PSScriptRoot/.env" | Where-Object { $_ -match '^\s*node_dir\s*=' } | ForEach-Object {
     $val = ($_ -split '=',2)[1].Trim().Trim('"').Trim("'").Trim()
-    if ($val) { $env:node_path = $val; $envNodePath = $val }
-  }
-  if (-not $envNodePath) {
-    Get-Content "$PSScriptRoot/.env" | Where-Object { $_ -match '^\s*NODE_PATH\s*=' } | ForEach-Object {
-      $val = ($_ -split '=',2)[1].Trim().Trim('"').Trim("'").Trim()
-      if ($val) { $env:node_path = $val; $envNodePath = $val }
-    }
+    if ($val) { $NodeDir = $val }
   }
 }
-if (-not $envNodePath) { $envNodePath = "C:\Program Files\nodejs" }
-$env:PATH = "$envNodePath;$env:PATH"
+if (-not $NodeDir) {
+  try { $NodeDir = Split-Path (Get-Command node -ErrorAction Stop).Source } catch {}
+}
+if (-not $NodeDir) { $NodeDir = Join-Path $env:ProgramFiles 'nodejs' }
+$env:PATH = "$NodeDir;$env:PATH"
+# Major-version gate: below 22 the tsx entry exits silently, which looks
+# exactly like a dead service. Fail loudly instead.
+$NodeMajor = (& node --version) -replace '^v', '' -split '\.' | Select-Object -First 1
+if ([int]$NodeMajor -lt 22) { throw "node major $NodeMajor too old, need 22+: fix node_dir in .env" }
 
 # pnpm shim by absolute path: some terminals never picked up the PATH entry.
 $PnpmCmd = 'C:\Users\HONOR\bin\pnpm.cmd'
