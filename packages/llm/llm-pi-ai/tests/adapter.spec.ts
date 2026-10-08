@@ -130,7 +130,7 @@ describe('PiAiAdapter provider routing', () => {
       headers: { 'x-opencode-session': 'stale', 'x-deepseek-harness-session-id': 'stale' },
     })
     await assemble(ctx, {
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       messages: [],
       sessionId: 'session-for-pi' as never,
     })
@@ -141,7 +141,7 @@ describe('PiAiAdapter provider routing', () => {
   it('sends no session routing headers without a session', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(server.url)
-    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    await assemble(ctx, { model: 'deepseek-flash', messages: [] })
     expect(server.headers[0]).not.toHaveProperty('x-opencode-session')
     expect(server.headers[0]).not.toHaveProperty('x-deepseek-harness-session-id')
   })
