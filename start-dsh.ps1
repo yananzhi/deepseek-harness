@@ -16,6 +16,22 @@
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
+# Self-elevate: Register/Start-ScheduledTask needs admin. When this script is
+# run directly without elevation, re-launch elevated so callers don't have to
+# right-click Run as administrator. (start.bat already elevates itself; this is
+# the fallback for `powershell -File start-dsh.ps1`.)
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+  Write-Host 'Requesting administrator privileges to register/start the scheduled task ...'
+  try {
+    Start-Process powershell.exe -Verb RunAs -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"")
+  } catch {
+    Write-Host 'Elevation was cancelled or failed; start aborted.'
+    exit 1
+  }
+  exit 0
+}
+
 function Read-DotEnv([string]$path) {
   $map = @{}
   if (-not (Test-Path $path)) { return $map }

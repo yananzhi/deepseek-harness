@@ -16,6 +16,14 @@ rem Logs: logs\dsh-<profile>.out.log / .err.log. Stop: stop.bat.
 setlocal
 cd /d "%~dp0"
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+rem Self-elevate: Register/Start-ScheduledTask needs admin. Re-launching here
+rem pops a single UAC prompt, so double-click works without manual Run as admin.
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+  echo Requesting administrator privileges to register/start the scheduled task...
+  "%PS%" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  exit /b 0
+)
 "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-dsh.ps1"
 if errorlevel 1 (
   echo.
