@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-16-node22-local-availability.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-16-node22-local-availability.md
-2026-09-16-node22-local-availability.md: 63aaa5eecb890f83ca2ced000e0406c6ea1b0afa
-2026-09-16-node22-local-availability.zh.md: 5a7525369aab6845b12376227d545dbf303e574d
+/agent-note-local-node-22-availability-on-windows-dev-machine:
+  en: 5d21412b5e2e8377
+  zh: 3ec72d6422d71e35
+/agent-note-local-node-22-availability-on-windows-dev-machine/problem:
+  en: e3e1ea8c5c155621
+  zh: f76bfc22c7567bce
+/agent-note-local-node-22-availability-on-windows-dev-machine/decision:
+  en: bd1c3b85d4edf460
+  zh: 341307fb48ce2a26
+/agent-note-local-node-22-availability-on-windows-dev-machine/alternatives-considered:
+  en: 5e0df2b6b758438e
+  zh: bedaeaa5ee7388de
+/agent-note-local-node-22-availability-on-windows-dev-machine/consequences:
+  en: 41e14e5430570100
+  zh: 407e529f2c9c7901

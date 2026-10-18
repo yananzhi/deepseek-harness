@@ -154,7 +154,7 @@ flowchart TB
 
 **阶段一：装请求（`buildRequest`，`agent.ts:407-495`）**。以上一次持久化头的配置为种子，先过 `agent/request` waterfall（`agent.ts:438-441`），监听器可整体替换 provider/model/reasoningEffort/采样标量。随后 `ctx.llm.prepareCall(proposedConfig)`（`agent.ts:449`）在该 provider 的当前注册上做精确模型解析：校验显式 reasoningEffort、补足 adapter 默认的 `maxTokens`/`defaultEffort`，把解析出的上下文容量存入 `request/context`（`agent.ts:472-483`）。生效配置连同系统提示与工具清单整体记为一个 `request/header`（`agent.ts:458-470`），理由 `initial`/`resume`/`change`。最后把 `config + 派生消息 + system + tools + sessionId + signal` 深冻结并打上 loop 标记（`markAgentLoopRequest`，`agent.ts:486-493`）——loop-built 请求由此不可变、且其内容是会话日志的纯函数。
 
-**阶段二：流并双轨记录（`agent.ts:343-351`）**。循环对每个 chunk 做两件事：先 `session.append('assistant/chunk', {turn, step, chunk})` 保存原始 chunk 的 seq，再 `assembler.push(chunk)` 折叠组装。原始 chunk 与组装块于是双轨并存：前者保重放与 UI 保真，后者是最终内容。流结束且无失败时，组装产物经 `assistant/message` 入日志，携带 provider/model provenance、可选的 `usage` 与 `replayState`，并以 `sourceEventSeqs: chunkSeqs` 引用其原始 chunk（`agent.ts:373-390`）。后续 turn 的派生历史由此可完整重建。（用户体感：打字机里的每个片段是"原始 chunk"，最终完整回复是"组装块"——两份都在账上，所以重放时既有逐字过程也有成品。）
+**阶段二：流并双轨记录（`agent.ts:343-351`）**。循环对每个 chunk 做两件事：先 `session.append('assistant/chunk', {turn, step, chunk})` 保存原始 chunk 的 seq，再 `assembler.push(chunk)` 折叠组装。原始 chunk 与组装块于是双轨并存：前者保重放与 UI 保真，后者是最终内容。流结束且无失败时，组装产物经 `assistant/message` 入日志，携带 provider/model 来源标记、可选的 `usage` 与 `replayState`，并以 `sourceEventSeqs: chunkSeqs` 引用其原始 chunk（`agent.ts:373-390`）。后续 turn 的派生历史由此可完整重建。（用户体感：打字机里的每个片段是"原始 chunk"，最终完整回复是"组装块"——两份都在账上，所以重放时既有逐字过程也有成品。）
 
 **组装块是整条管线共用的词表**：`BlockAssembler` 产出的 `ContentBlock` 直接进入 `assistant/message`，同时又是下一次 `deriveMessages` 的输入、`ToolCallBlock.id` 与 `tool/call*` 的 `CallId` 共用同一品牌化 ID（`types.ts:78-85`），还是 token-meter `estimate` 的计价对象。装配不是「adapter 的私有格式」而是「会话与请求之间的中间表示」——这解释了为什么新核心块必须同时带 adapter、UI、compaction 与持久重放支持（`types.ts:96-98`），扩张词表本质上是在扩张整条数据平面的 schema。
 
@@ -192,7 +192,7 @@ sequenceDiagram
         Loop->>LOG: append assistant/chunk（保留 raw chunk，agent.ts:349）
         Loop->>ASM: assembler.push(chunk)（agent.ts:350）
     end
-    Loop->>LOG: append assistant/message（组装块 + provenance + usage，agent.ts:381）
+    Loop->>LOG: append assistant/message（组装块 + 来源标记 + usage，agent.ts:381）
     Note over LOG: 模型可见 ⟺ 已入日志：内容可从 request/header + assistant/* 重建
 ```
 

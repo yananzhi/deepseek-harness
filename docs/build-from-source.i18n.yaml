@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for build-from-source.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/build-from-source.md
+/build-from-source-local-runbook:
+  en: 0a078a15d580ef09
+  zh: 8ccce15ce6fdda06
+/build-from-source-local-runbook/environment:
+  en: 2dd76fb2b381a8e7
+  zh: d5febcfe37b2390e
+/build-from-source-local-runbook/install-dependencies:
+  en: 2694105027bbae96
+  zh: 3ff498b7d8177608
+/build-from-source-local-runbook/build:
+  en: ffddac9e752b5c01
+  zh: 4bd8494ae877a9f8
+/build-from-source-local-runbook/run-and-verify:
+  en: 1f56320ae9946fd9
+  zh: 514a9400444558f4

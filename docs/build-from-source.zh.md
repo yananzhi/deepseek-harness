@@ -1,6 +1,8 @@
 # 编译安装（本机 runbook）
 
-本页只记录这台 Windows 机器上的安装与编译步骤；通用贡献者流程见 [development.md](development.md)，测试分层见 [testing.md](testing.md)。
+[English](build-from-source.md) | 中文
+
+本页只记录这台 Windows 机器上的安装与编译步骤；通用贡献者流程见 [development.zh.md](development.zh.md)，测试分层见 [testing.zh.md](testing.zh.md)。
 
 ## 环境
 
