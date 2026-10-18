@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-http-proxy/install
  */
 
-import type { Dispatcher, Pool } from 'undici'
+import type { Dispatcher, Pool, RequestInit as UndiciRequestInit } from 'undici'
 import {
   isLoopbackHost,
   isSupportedProxyUrl,
@@ -319,7 +319,12 @@ export async function installProxyFromEnvironment(
  */
 export async function createProxyDispatcher(proxyUrl: string): Promise<Dispatcher> {
   const { ProxyAgent } = await import('undici')
-  return new ProxyAgent(proxyUrl) as unknown as Dispatcher
+  return new ProxyAgent(proxyUrl)
+}
+
+/** The slice of `undici` this module calls; its own DOM types stay inside the call. */
+interface UndiciFetchModule {
+  readonly fetch: (input: string | URL, init?: UndiciRequestInit) => Promise<unknown>
 }
 
 /**
@@ -343,19 +348,19 @@ export function fetchForProxyDispatcher(dispatcher: Dispatcher | undefined): typ
     try {
       if (typeof input === 'string') url = new URL(input)
       else if (input instanceof URL) url = input
-      else if (typeof (input as Request).url === 'string') url = new URL((input as Request).url)
+      else if (typeof input.url === 'string') url = new URL(input.url)
     } catch {
       // A malformed URL is the fetch's own failure; fall through to the proxying path.
     }
     if (url !== undefined && isLoopbackHost(url.hostname)) {
-      return globalThis.fetch(input as RequestInfo, init)
+      return globalThis.fetch(input, init)
     }
-    const { fetch } = await import('undici')
-    return (fetch as unknown as typeof globalThis.fetch)(
-      input as RequestInfo,
-      { ...(init ?? {}), dispatcher } as RequestInit & { dispatcher: Dispatcher },
-    )
-  }) as unknown as typeof fetch
+    // `undici`'s `fetch` takes its own `Request` class, so a `Request` input
+    // travels as its URL together with the caller's init; callers pass a URL.
+    const target = typeof input === 'string' ? input : input instanceof URL ? input : input.url
+    const { fetch }: UndiciFetchModule = await import('undici')
+    return await fetch(target, { ...(init ?? {}), dispatcher } as UndiciRequestInit) as Response
+  })
 }
 
 /**

@@ -467,7 +467,7 @@ export class PiAiAdapter extends LlmAdapter {
     finally {
       consumer.abort('pi-ai stream consumer stopped')
       if (proxyDispatcher !== undefined) {
-        try { await (proxyDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+        try { await proxyDispatcher.close() } catch {
           // A close that races a still-reading body is cleanup; the stream's own outcome already decided.
         }
       }

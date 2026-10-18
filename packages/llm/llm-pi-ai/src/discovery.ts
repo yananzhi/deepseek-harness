@@ -322,7 +322,7 @@ export async function discoverModels(
   if (stored?.proxyUrl !== undefined) {
     const { createProxyDispatcher, fetchForProxyDispatcher } = await import('@deepseek-ai/dsh-http-proxy')
     const dispatcher = await createProxyDispatcher(stored.proxyUrl)
-    discoveryDispatcher = dispatcher as unknown as { close(): Promise<void> }
+    discoveryDispatcher = dispatcher
     discoveryFetch = fetchForProxyDispatcher(dispatcher)
   }
   const fetchImpl: typeof fetch = discoveryFetch ?? globalThis.fetch
@@ -344,7 +344,7 @@ export async function discoverModels(
   } catch (error: unknown) {
     /* v8 ignore next 4 -- dispatcher close on fetch failure is best-effort */
     if (discoveryDispatcher !== undefined) {
-      try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+      try { await discoveryDispatcher.close() } catch {
         // Discovery dispatcher close racing a fetch failure is cleanup.
       }
     }
@@ -356,7 +356,7 @@ export async function discoverModels(
   if (!response.ok) {
     /* v8 ignore next 4 -- dispatcher close on non-2xx */
     if (discoveryDispatcher !== undefined) {
-      try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+      try { await discoveryDispatcher.close() } catch {
         // Non-2xx response needs no body stream; close the proxy dispatcher.
       }
     }
@@ -371,7 +371,7 @@ export async function discoverModels(
   } catch (error: unknown) {
     /* v8 ignore next 4 -- dispatcher close on body read failure */
     if (discoveryDispatcher !== undefined) {
-      try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+      try { await discoveryDispatcher.close() } catch {
         // Body read failure still owns dispatcher cleanup.
       }
     }
@@ -385,7 +385,7 @@ export async function discoverModels(
   }
   /* v8 ignore next 4 -- dispatcher close on success */
   if (discoveryDispatcher !== undefined) {
-    try { await (discoveryDispatcher as unknown as { close(): Promise<void> }).close() } catch {
+    try { await discoveryDispatcher.close() } catch {
       // Successful read still closes the per-discovery proxy dispatcher.
     }
   }
