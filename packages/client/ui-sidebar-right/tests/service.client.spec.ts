@@ -739,6 +739,59 @@ describe('explicit tab resource cleanup', () => {
   })
 })
 
+it('runs every removed tab\'s cleanup before committing the set as one entry', () => {
+  const h = harness()
+  const release = h.adopt(SESSION, h.instance)
+  const unbind = h.publish()
+  h.controller.openResource('dsh-resource://file/session/s-test/one')
+  h.controller.openResource('dsh-resource://file/session/s-test/two')
+  const one = h.tabOf('one')
+  const two = h.tabOf('two')
+  const seen: TabId[] = []
+  const unregister = h.controller.registerCloseHandler('text', (sessionId, tab) => {
+    expect(sessionId).toBe(SESSION)
+    // Every cleanup sees its tab still present: nothing is removed until all have run.
+    expect(h.layout().tabs[tab.id]).toBeDefined()
+    seen.push(tab.id)
+  })
+  try {
+    const before = h.entries()
+    h.controller.closeTabsIn(SESSION, [one, two])
+    expect(seen).toEqual([one, two])
+    expect(h.layout().tabs[one]).toBeUndefined()
+    expect(h.layout().tabs[two]).toBeUndefined()
+    expect(h.entries()).toBe(before + 1)
+  } finally {
+    unregister()
+    unbind()
+    release()
+  }
+})
+
+it('removes no tab when one cleanup in the set throws', () => {
+  const h = harness()
+  const release = h.adopt(SESSION, h.instance)
+  const unbind = h.publish()
+  h.controller.openResource('dsh-resource://file/session/s-test/one')
+  h.controller.openResource('dsh-resource://file/session/s-test/two')
+  const one = h.tabOf('one')
+  const two = h.tabOf('two')
+  const unregister = h.controller.registerCloseHandler('text', (_sessionId, tab) => {
+    if (tab.id === two) throw new Error('cannot retain cleanup')
+  })
+  try {
+    const before = h.entries()
+    expect(() => { h.controller.closeTabsIn(SESSION, [one, two]) }).toThrow('cannot retain cleanup')
+    expect(h.layout().tabs[one]).toBeDefined()
+    expect(h.layout().tabs[two]).toBeDefined()
+    expect(h.entries()).toBe(before)
+  } finally {
+    unregister()
+    unbind()
+    release()
+  }
+})
+
 it('releases close handlers without a stale disposer removing a replacement', () => {
   const h = harness()
   h.adopt(SESSION, h.instance)

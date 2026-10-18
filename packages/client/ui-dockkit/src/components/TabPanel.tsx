@@ -5,7 +5,8 @@
  *
  * A chip is a capsule carrying one control, its close, shown over its right
  * end while the chip is active, hovered, or focused; the context menu
- * (secondary press) carries the same close plus whatever the embedder appends.
+ * (secondary press) carries the same close, the close-set gestures over the
+ * pane's strip — others, to the right, all — and whatever the embedder appends.
  * Both close routes draw only while the embedder's `canCloseTab` allows, and
  * a pane's lone chip whose close is withheld draws quiet — no capsule, no
  * hover fill — since there is nothing to select against and nothing to do to
@@ -124,6 +125,31 @@ function selects(key: string): boolean {
 }
 
 /**
+ * The tabs each close-set gesture would remove from one pane, in strip order and
+ * already limited to the chips the embedder allows closing. An empty list
+ * removes that item, so a gesture with nothing left to close is never offered;
+ * close-all needs a second closable tab, because closing the only one is the
+ * plain close the menu already carries.
+ * @param tabs - the pane's chips, in strip order.
+ * @param anchor - the chip whose menu is open.
+ * @param canClose - the embedder's per-tab eligibility.
+ * @returns the close-others, close-to-the-right, and close-all targets.
+ */
+function closeTargets(
+  tabs: readonly TabId[],
+  anchor: TabId,
+  canClose: (tabId: TabId) => boolean,
+): { readonly others: readonly TabId[]; readonly toRight: readonly TabId[]; readonly all: readonly TabId[] } {
+  const closable = tabs.filter(canClose)
+  const index = tabs.indexOf(anchor)
+  return {
+    others: closable.filter(tabId => tabId !== anchor),
+    toRight: closable.filter(tabId => tabs.indexOf(tabId) > index),
+    all: closable.length > 1 ? closable : [],
+  }
+}
+
+/**
  * Which sides of the chip box hold chips scrolled out of view, as the
  * `data-dockkit-strip-scroll` value the stylesheet fades: `undefined` while
  * every chip is in view.
@@ -223,6 +249,13 @@ export function TabStrip({ state, pane, callbacks }: TabPanelProps): ReactNode {
   const stripIndex = target !== undefined && target.kind === 'strip' && target.paneId === pane.id
     ? target.index
     : undefined
+  // The open menu's close-set targets, resolved once: only one chip per pane can
+  // hold the menu, and it is always this strip's.
+  const targets = menu === undefined ? undefined : closeTargets(pane.tabs, menu.tabId, callbacks.canCloseTab)
+
+  /** Close a set from the menu: the menu goes first, so the close it reports leaves no menu over the result. */
+  const closes = (tabIds: readonly TabId[]): (() => void) | undefined =>
+    tabIds.length === 0 ? undefined : () => { setMenu(undefined); callbacks.onCloseTabs(tabIds) }
 
   /** Select a tab from a click or a key, unless it is the active pane's selected tab already: that changes nothing. */
   const activate = (tabId: TabId): void => {
@@ -332,11 +365,14 @@ export function TabStrip({ state, pane, callbacks }: TabPanelProps): ReactNode {
                     </button>
                   </Tooltip>
                 )}
-                {menu?.tabId === tabId && (
+                {menu?.tabId === tabId && targets !== undefined && (
                   <TabMenu
                     labels={callbacks.labels}
                     anchor={menu.anchor}
                     onClose={closable ? () => { setMenu(undefined); callbacks.onCloseTab(tabId) } : undefined}
+                    onCloseOthers={closes(targets.others)}
+                    onCloseToRight={closes(targets.toRight)}
+                    onCloseAll={closes(targets.all)}
                     onDismiss={() => { setMenu(undefined) }}
                     extras={callbacks.renderTabMenuItems?.(tab, () => { setMenu(undefined) })}
                   />

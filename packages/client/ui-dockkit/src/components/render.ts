@@ -17,6 +17,8 @@ export interface PaneCallbacks {
   readonly onSplitPane: (paneId: PaneId) => void
   readonly onAddTab: (paneId: PaneId) => void
   readonly onCloseTab: (tabId: TabId) => void
+  /** Close several tabs as one gesture; the ids are already limited by `canCloseTab`. */
+  readonly onCloseTabs: (tabIds: readonly TabId[]) => void
   /** Begin dragging a tab; the surface owns the gesture from here. */
   readonly onTabPressed: (tabId: TabId, event: ReactPointerEvent<HTMLElement>) => void
   /** Begin dragging a divider inside `splitId`, at the boundary after `index`. */

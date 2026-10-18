@@ -189,6 +189,14 @@ export class DockController {
   }
 
   /**
+   * Destroy several tabs as one recorded step, for the menu's close-set gestures.
+   * @param tabIds - the tabs to close; the caller has already applied its own eligibility rule.
+   */
+  closeTabs(tabIds: readonly TabId[]): void {
+    this.run(tabIds.map(tabId => ({ type: 'closeTab', tabId })))
+  }
+
+  /**
    * Focus a tab, its pane, and raise that pane when it floats.
    * @param tabId - the tab to focus.
    */

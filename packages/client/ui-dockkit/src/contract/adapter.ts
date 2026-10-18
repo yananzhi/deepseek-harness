@@ -33,6 +33,12 @@ export interface DockLabels {
   readonly closeTabShortcut?: string | undefined
   /** Effective close keys shown as separate tooltip keycaps. */
   readonly closeTabKeys?: readonly string[] | undefined
+  /** The menu's close-others item: every other closable tab in the pane. */
+  readonly closeOtherTabs: string
+  /** The menu's close-to-the-right item: every closable tab after this one in the pane. */
+  readonly closeTabsToRight: string
+  /** The menu's close-all item: every closable tab in the pane. */
+  readonly closeAllTabs: string
   /** The strip's add control, which seats the embedder's seeded tab. */
   readonly addTab: string
   /** Send a floating panel back into the docked tree. */
@@ -82,6 +88,13 @@ export interface DockIntents {
   readonly addTab: (paneId: PaneId) => void
   /** Destroy a tab. */
   readonly closeTab: (tabId: TabId) => void
+  /**
+   * Destroy several tabs as one gesture: the menu's close-others,
+   * close-to-the-right, and close-all. The kit resolves the set from the
+   * pane's strip and reports it already limited by the embedder's
+   * `canCloseTab`, so the call carries every tab it means to remove.
+   */
+  readonly closeTabs: (tabIds: readonly TabId[]) => void
   /** Copy a tab beside itself. No kit control drives this; embedders reach it through their own API. */
   readonly duplicateTab: (tabId: TabId) => void
   /** Float a tab, at `rect` when the release point decided one (a drag released clear of the surface). */

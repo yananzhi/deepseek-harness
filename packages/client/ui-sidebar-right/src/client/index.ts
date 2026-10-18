@@ -185,7 +185,7 @@ export function apply(ctx: ClientContext): void {
         } }
       },
     }
-    const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence' | 'closeTab' | 'measureRoom'> = {
+    const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence' | 'closeTab' | 'closeTabs' | 'measureRoom'> = {
       syncPresentation({ shown, track, fullscreen }) {
         if (shown) layout.openRightbar(track, fullscreen)
         else layout.closeRightbar()
@@ -224,6 +224,10 @@ export function apply(ctx: ClientContext): void {
           measureRoom: (canSplitPane) => { measure(sessionId, canSplitPane) },
           closeTab: (tabId) => {
             try { controller.closeIn(sessionId, tabId) }
+            catch (error) { console.error('Sidebar tab close failed:', error) }
+          },
+          closeTabs: (tabIds) => {
+            try { controller.closeTabsIn(sessionId, tabIds) }
             catch (error) { console.error('Sidebar tab close failed:', error) }
           },
           keyedHooks: { tabNavigation: key => controller.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation },

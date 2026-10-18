@@ -957,12 +957,13 @@ describe('slot-owned useTabInfo', () => {
 describe('intentsFor — the kit\'s gestures as one session\'s store actions', () => {
   it('binds every intent to the session, and asks the navigation face for a guide on add', () => {
     const actions = {
-      focusTab: vi.fn(), focusPane: vi.fn(), splitPane: vi.fn(), closeTab: vi.fn(), duplicateTab: vi.fn(),
+      focusTab: vi.fn(), focusPane: vi.fn(), splitPane: vi.fn(), closeTab: vi.fn(), closeTabs: vi.fn(), duplicateTab: vi.fn(),
       floatTab: vi.fn(), unfloatPane: vi.fn(), placeTab: vi.fn(), dropTab: vi.fn(), moveFloat: vi.fn(),
       resizeFloat: vi.fn(), resizeSplit: vi.fn(),
     }
     const openTab = vi.fn()
-    const intents = intentsFor(SESSION, actions as unknown as Parameters<typeof intentsFor>[1], openTab)
+    const actionFace = actions as unknown as Parameters<typeof intentsFor>[1]
+    const intents = intentsFor(SESSION, actionFace, openTab)
     const rect = { x: 1, y: 2, width: 300, height: 200 }
     const TAB_1 = 'tab-1' as TabId
     const PANE_1 = 'pane-1' as PaneId
@@ -972,6 +973,7 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
     intents.focusPane(PANE_1)
     intents.splitPane(PANE_1)
     intents.closeTab(TAB_1)
+    intents.closeTabs([TAB_1])
     intents.duplicateTab(TAB_1)
     intents.floatTab(TAB_1, rect)
     intents.unfloatPane(PANE_2)
@@ -984,6 +986,7 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
     expect(actions.focusPane).toHaveBeenCalledWith(SESSION, PANE_1)
     expect(actions.splitPane).toHaveBeenCalledWith(SESSION, PANE_1)
     expect(actions.closeTab).toHaveBeenCalledWith(SESSION, TAB_1)
+    expect(actions.closeTabs).toHaveBeenCalledWith(SESSION, [TAB_1])
     expect(actions.duplicateTab).toHaveBeenCalledWith(SESSION, TAB_1)
     expect(actions.floatTab).toHaveBeenCalledWith(SESSION, TAB_1, rect)
     expect(actions.unfloatPane).toHaveBeenCalledWith(SESSION, PANE_2)
@@ -995,7 +998,40 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
     // The add control is the guide opened by kind, in that pane, beside any guide elsewhere.
     intents.addTab(PANE_1)
     expect(openTab).toHaveBeenCalledWith('guide', { paneId: PANE_1, revealIfOpened: false })
+
+    // A seat-supplied close-set step wins over the bare store action, so each
+    // removed tab's kind cleanup runs before the batch commits.
+    const closeSet = vi.fn()
+    const bound = intentsFor(SESSION, actionFace, openTab, undefined, undefined, closeSet)
+    const TAB_2 = 'tab-2' as TabId
+    bound.closeTabs([TAB_1, TAB_2])
+    expect(closeSet).toHaveBeenCalledExactlyOnceWith([TAB_1, TAB_2])
+    expect(actions.closeTabs).toHaveBeenCalledTimes(1)
   })
+})
+
+it('closes a chip\'s neighbours from its menu, running each removed kind\'s cleanup before the batch lands', async () => {
+  const h = await mountSeat()
+  act(() => { h.actions.setExpanded(SESSION, true) })
+  const first = h.open('first.txt')
+  const second = h.open('second.txt')
+  const anchor = Object.values(h.layout().tabs).find(tab => tab.kind === 'guide')
+  if (anchor === undefined) throw new Error('expected the seeded guide')
+  const closed: TabId[] = []
+  const release = h.controller.registerCloseHandler('text', (_sessionId, tab) => { closed.push(tab.id) })
+  try {
+    fireEvent.contextMenu(element(h.view.container, `[data-dockkit-tab="${anchor.id}"]`))
+    // The menu portals to the document, not the seat's own container.
+    const closeOthers = document.querySelector<HTMLElement>('[data-dockkit-menu-close-others]')
+    if (closeOthers === null) throw new Error('expected the close-others item')
+    fireEvent.click(closeOthers)
+    expect(closed).toEqual([first.id, second.id])
+    expect(h.layout().tabs[first.id]).toBeUndefined()
+    expect(h.layout().tabs[second.id]).toBeUndefined()
+    expect(h.layout().tabs[anchor.id]).toBeDefined()
+  } finally {
+    release()
+  }
 })
 
 it('keeps a resource tab and reports a synchronous cleanup failure from its close button', async () => {

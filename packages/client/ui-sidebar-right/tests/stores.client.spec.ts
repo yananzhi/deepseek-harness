@@ -287,6 +287,83 @@ describe('createSidebarRightStore — the last docked tab', () => {
   })
 })
 
+describe('createSidebarRightStore — closing several tabs at once', () => {
+  it('closes the set as one reversible entry, skipping tabs already gone or the embedder refuses', () => {
+    const { actions, layout, entries, expand } = harness()
+    expand()
+    actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/a.txt', title: 'a' }, () => {})
+    actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/b.txt', title: 'b' }, () => {})
+    const [a, b] = Object.values(layout().tabs).filter(tab => tab.kind === 'text')
+    if (a === undefined || b === undefined) throw new Error('expected both text tabs')
+    actions.closeTab(SESSION, a.id)
+    const afterFirst = layout()
+    const recorded = entries()
+
+    // The already-closed `a` is not handed to the kit: only `b` closes.
+    actions.closeTabs(SESSION, [a.id, b.id])
+    expect(layout().tabs[b.id]).toBeUndefined()
+    expect(entries()).toBe(recorded + 1)
+
+    actions.undo(SESSION)
+    expect(layout()).toEqual(afterFirst)
+    expect(layout().tabs[b.id]).toBeDefined()
+  })
+
+  it('records nothing when no tab in the set is closable', () => {
+    const { actions, surface, entries, guide, expand } = harness()
+    expand()
+    const before = surface()
+    const recorded = entries()
+    // The guide alone is the docked surface's only tab: nothing to close, no entry.
+    actions.closeTabs(SESSION, [guide()])
+    expect(surface()).toBe(before)
+    expect(entries()).toBe(recorded)
+    // An id the surface never held is skipped the same way.
+    actions.closeTabs(SESSION, ['tab-missing' as TabId])
+    expect(surface()).toBe(before)
+    expect(entries()).toBe(recorded)
+  })
+
+  it('collapses the column when the set takes every docked tab, handing back the mode', () => {
+    const { actions, layout, entries, guide, expand } = harness()
+    expand()
+    actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/a.txt', title: 'a' }, () => {})
+    const text = Object.values(layout().tabs).find(tab => tab.kind === 'text')
+    if (text === undefined) throw new Error('expected the text tab')
+    const before = layout()
+    const recorded = entries()
+    actions.setMode(SESSION, 'fullscreen')
+
+    actions.closeTabs(SESSION, [guide(), text.id])
+
+    expect(layout().expanded).toBe(false)
+    expect(layout().mode).toBe('push')
+    expect(Object.values(layout().tabs)).toHaveLength(0)
+    expect(entries()).toBe(recorded + 2)
+
+    actions.undo(SESSION)
+    actions.undo(SESSION)
+    expect(layout()).toEqual(before)
+  })
+
+  it('keeps the column while another docked pane still holds a tab', () => {
+    const { actions, layout, guide, expand } = harness()
+    expand()
+    actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/a.txt', title: 'a' }, () => {})
+    const text = Object.values(layout().tabs).find(tab => tab.kind === 'text')
+    if (text === undefined) throw new Error('expected the text tab')
+    const home = getPane(layout(), layout().rootId).id
+    actions.dropTab(SESSION, text.id, home, 'right')
+    expect(dockPaneIds(layout())).toHaveLength(2)
+
+    actions.closeTabs(SESSION, [text.id])
+
+    expect(layout().tabs[text.id]).toBeUndefined()
+    expect(layout().expanded).toBe(true)
+    expect(layout().tabs[guide()]).toBeDefined()
+  })
+})
+
 describe('createSidebarRightStore — floating panels and dividers', () => {
   it('closes the sole tab in a floating pane while retaining the docked pane', () => {
     const { actions, layout, entries, guide, expand } = harness()

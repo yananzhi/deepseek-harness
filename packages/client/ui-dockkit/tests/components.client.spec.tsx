@@ -38,6 +38,7 @@ function spyIntents(): DockIntents & Record<keyof DockIntents, ReturnType<typeof
     splitPane: vi.fn(),
     addTab: vi.fn(),
     closeTab: vi.fn(),
+    closeTabs: vi.fn(),
     duplicateTab: vi.fn(),
     floatTab: vi.fn(),
     unfloatPane: vi.fn(),
@@ -667,9 +668,13 @@ describe('DockSurface', () => {
     expect(seedChip.querySelector('[data-dockkit-tab-close]')).toBeNull()
     expect(fileChip.querySelector('[data-dockkit-tab-close]')).not.toBeNull()
 
-    // The menu still opens on the withheld chip: the embedder's items remain reachable.
+    // The menu still opens on the withheld chip: the embedder's items remain
+    // reachable, and so do the set gestures over the closable tab beside it —
+    // close-all would be that same single tab, so that item is withheld.
     fireEvent.contextMenu(seedChip)
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['embedder item'])
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      TEST_LABELS.closeOtherTabs, TEST_LABELS.closeTabsToRight, 'embedder item',
+    ])
     fireEvent.pointerDown(document.body)
 
     fireEvent.contextMenu(fileChip)
@@ -742,17 +747,98 @@ describe('DockSurface', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('offers close only for tabs the embedder allows', () => {
+  it('withholds the plain close from a tab the embedder refuses, leaving the set gestures over its closable neighbour', () => {
     const controller = seededController()
     const allowed = controller.openContent({ contentId: 'resource:a', title: 'A', kind: 'test' })
     const intents = spyIntents()
     renderSurface(controller, intents, true, undefined, { canCloseTab: tabId => tabId === allowed })
     expect(screen.getByRole('button', { name: TEST_LABELS.closeTab }).getAttribute('data-dockkit-tab-close')).toBe(allowed)
+    // The withheld chip keeps a menu: its own close and the all-set are gone —
+    // the all-set would be the one tab the embedder does allow — while the
+    // gestures reaching that tab stay.
     fireEvent.contextMenu(screen.getByRole('tab', { name: 'Start' }))
-    expect(screen.queryByRole('menu')).toBeNull()
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      TEST_LABELS.closeOtherTabs, TEST_LABELS.closeTabsToRight,
+    ])
+    fireEvent.pointerDown(document.body)
     fireEvent.contextMenu(screen.getByRole('tab', { name: /A/u }))
     fireEvent.click(screen.getByRole('menuitem', { name: TEST_LABELS.closeTab }))
     expect(intents.closeTab).toHaveBeenCalledExactlyOnceWith(allowed)
+  })
+
+  it('reports the pane\'s other tabs as one close-set intent, in the order the strip draws them', () => {
+    const controller = seededController()
+    const a = controller.openContent({ contentId: 'resource:a', title: 'A', kind: 'test' })
+    const b = controller.openContent({ contentId: 'resource:b', title: 'B', kind: 'test' })
+    const state = controller.getSnapshot().state
+    const seed = getPane(state, state.activePaneId).tabs[0]!
+    const intents = spyIntents()
+    renderSurface(controller, intents)
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'A' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: TEST_LABELS.closeOtherTabs }))
+    // One intent, not one per tab: a batch close is a single recorded step.
+    expect(intents.closeTabs).toHaveBeenCalledExactlyOnceWith([seed, b])
+    expect(intents.closeTab).not.toHaveBeenCalled()
+    expect(a).toBeDefined()
+  })
+
+  it('reports only the tabs drawn after the anchor for close-to-the-right', () => {
+    const controller = seededController()
+    controller.openContent({ contentId: 'resource:a', title: 'A', kind: 'test' })
+    const b = controller.openContent({ contentId: 'resource:b', title: 'B', kind: 'test' })
+    const intents = spyIntents()
+    renderSurface(controller, intents)
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'A' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: TEST_LABELS.closeTabsToRight }))
+    expect(intents.closeTabs).toHaveBeenCalledExactlyOnceWith([b])
+  })
+
+  it('reports every closable tab of the pane for close-all, the anchor included', () => {
+    const controller = seededController()
+    const a = controller.openContent({ contentId: 'resource:a', title: 'A', kind: 'test' })
+    const b = controller.openContent({ contentId: 'resource:b', title: 'B', kind: 'test' })
+    const state = controller.getSnapshot().state
+    const seed = getPane(state, state.activePaneId).tabs[0]!
+    const intents = spyIntents()
+    renderSurface(controller, intents)
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: /B/u }))
+    fireEvent.click(screen.getByRole('menuitem', { name: TEST_LABELS.closeAllTabs }))
+    expect(intents.closeTabs).toHaveBeenCalledExactlyOnceWith([seed, a, b])
+  })
+
+  it('omits close-to-the-right on the last chip, where nothing is drawn after it', () => {
+    const controller = seededController()
+    controller.openContent({ contentId: 'resource:a', title: 'A', kind: 'test' })
+    renderSurface(controller, spyIntents())
+    fireEvent.contextMenu(screen.getByRole('tab', { name: /A/u }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      TEST_LABELS.closeTab, TEST_LABELS.closeOtherTabs, TEST_LABELS.closeAllTabs,
+    ])
+  })
+
+  it('offers only close on a pane\'s single tab, where every set would name that one tab', () => {
+    renderSurface(seededController(), spyIntents())
+    expect(screen.getAllByRole('tab')).toHaveLength(1)
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Start' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([TEST_LABELS.closeTab])
+  })
+
+  it('reports each close-set gesture once and closes the menu', () => {
+    const controller = seededController()
+    controller.openContent({ contentId: 'resource:a', title: 'A', kind: 'test' })
+    controller.openContent({ contentId: 'resource:b', title: 'B', kind: 'test' })
+    const intents = spyIntents()
+    renderSurface(controller, intents)
+
+    for (const label of [TEST_LABELS.closeOtherTabs, TEST_LABELS.closeTabsToRight, TEST_LABELS.closeAllTabs]) {
+      fireEvent.contextMenu(screen.getByRole('tab', { name: 'A' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: label }))
+      expect(screen.queryByRole('menu')).toBeNull()
+    }
+    expect(intents.closeTabs).toHaveBeenCalledTimes(3)
   })
 
   it.each([

@@ -16,7 +16,7 @@ function mounted(controller = seededController(), options: Partial<ComponentProp
   const callbacks: PaneCallbacks = {
     onFocusTab: (id) => { controller.focusTab(id); redraw() },
     onFocusPane: (id) => { controller.focusPane(id); redraw() },
-    onSplitPane: vi.fn(), onAddTab: vi.fn(), onCloseTab: vi.fn(), onTabPressed: vi.fn(), onDividerPressed: vi.fn(),
+    onSplitPane: vi.fn(), onAddTab: vi.fn(), onCloseTab: vi.fn(), onCloseTabs: vi.fn(), onTabPressed: vi.fn(), onDividerPressed: vi.fn(),
     splitBlock: () => undefined, canAddTab: () => true, canCloseTab: () => true,
     dropTarget: undefined, draggingTabId: undefined, labels: TEST_LABELS,
     renderTab: tab => <input data-body={tab.id} defaultValue={tab.title} />,

@@ -232,6 +232,7 @@ type SidebarRightActions = {
   ) => void
   duplicateTab: (draft: SidebarRightState, sessionId: string, tabId: TabId) => void
   closeTab: (draft: SidebarRightState, sessionId: string, tabId: TabId) => void
+  closeTabs: (draft: SidebarRightState, sessionId: string, tabIds: readonly TabId[]) => void
   focusTab: (draft: SidebarRightState, sessionId: string, tabId: TabId) => void
   focusPane: (draft: SidebarRightState, sessionId: string, paneId: PaneId) => void
   placeTab: (draft: SidebarRightState, sessionId: string, tabId: TabId, toPaneId: PaneId, index: number) => void
@@ -370,6 +371,24 @@ export function createSidebarRightStore(
           // The collapse also leaves fullscreen: the reopened column shows only
           // the reseeded default page, which never earns the whole window.
           return [{ type: 'closeTab', tabId }, ...planSetMode(state, 'push'), ...planSetExpanded(state, false)]
+        }, seed))
+      },
+      // Several tabs closing at once are one intent, so they are one entry to
+      // undo. Eligibility is the same per-tab rule as a single close, and the
+      // last-tab rule is applied once, to what the closes leave behind: a
+      // docked surface emptied entirely collapses exactly as its last tab
+      // would, while a surface still holding tabs leaves its emptied panes to
+      // the settle step.
+      closeTabs: (d, sessionId: string, tabIds: readonly TabId[]) => {
+        d.bySession = seat(d, sessionId, s => advance(s, (state) => {
+          const closable = tabIds.filter(tabId => canCloseTab(s, tabId))
+          if (closable.length === 0) return []
+          const ops: LayoutOp[] = closable.map(tabId => ({ type: 'closeTab', tabId }))
+          const left = replay(state, ops)
+          const emptied = dockPaneIds(left).every(paneId => getPane(left, paneId).tabs.length === 0)
+          return emptied
+            ? [...ops, ...planSetMode(state, 'push'), ...planSetExpanded(state, false)]
+            : ops
         }, seed))
       },
       focusTab: (d, sessionId: string, tabId: TabId) => {

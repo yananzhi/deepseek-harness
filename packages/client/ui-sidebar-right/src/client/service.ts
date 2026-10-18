@@ -381,6 +381,30 @@ export class SidebarRightController implements ISidebarRight {
     commit()
   }
 
+  /**
+   * Close several tabs of one session as one recorded step — the tab menu's
+   * close-others, close-to-the-right, and close-all. Each removed tab kind's
+   * cleanup runs before the step is committed; a tab that is already gone or
+   * that this package refuses to close is skipped. A throwing handler aborts
+   * the step before it commits, leaving every tab in place.
+   * Not part of `ISidebarRight`: the Tab domain's path.
+   * @param sessionId - the session the tabs are in.
+   * @param tabIds - the tabs to close.
+   */
+  closeTabsIn(sessionId: SessionId, tabIds: readonly TabId[]): void {
+    const actions = this.actionsFor(sessionId)
+    const surface = this.adopted.get(sessionId)?.store.getSnapshot().bySession[sessionId]
+    if (actions === undefined || surface === undefined) return
+    const closing: TabRecord[] = []
+    for (const tabId of tabIds) {
+      const tab = surface.layout.tabs[tabId]
+      if (tab !== undefined && canCloseTab(surface, tabId)) closing.push(tab)
+    }
+    if (closing.length === 0) return
+    for (const tab of closing) this.closeHandlers.get(tab.kind)?.(sessionId, tab)
+    actions.closeTabs(sessionId, closing.map(tab => tab.id))
+  }
+
   /** Claim a resource and place it in one session; an address outside the scheme or one no type claims throws. */
   private placeResource(
     sessionId: SessionId,
