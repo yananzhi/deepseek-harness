@@ -14,6 +14,7 @@
   - text: Appearance
   - button "Light"
   - button "Dark"
+  - button "Eye care"
   - button "System" [pressed]
   - text: Font size Only affects conversation content 14
   - button "Increase font size"

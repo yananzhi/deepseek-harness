@@ -310,7 +310,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  async function selectTheme(cube: Locator, preference: 'light' | 'dark' | 'system'): Promise<void> {
+  async function selectTheme(cube: Locator, preference: 'light' | 'dark' | 'eye-care' | 'system'): Promise<void> {
     // Optimistic UI and a file value from an earlier gesture do not prove this write finished.
     const [response] = await Promise.all([
       page.waitForResponse((candidate) => {
@@ -497,6 +497,13 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.emulateMedia({ colorScheme: 'dark' })
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(true)
     await expect.poll(async () => (await readState()).faviconPaths).toEqual(['/favicon-dark.svg'])
+    expectThemeColorSynchronized(await readState())
+    // Eye care keeps the light palette and paints the canvas green.
+    const eyeCareCube = page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '护眼' })
+    await selectTheme(eyeCareCube, 'eye-care')
+    await expect.poll(() => eyeCareCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(false)
+    await expect.poll(async () => (await readState()).token, { timeout: 5_000 }).toBe('#C7EDCC')
     expectThemeColorSynchronized(await readState())
     // Restore for the specs that follow: light preference beats the emulated
     // dark OS scheme, leaving the shared page in the light default.

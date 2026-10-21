@@ -14,6 +14,7 @@
   - text: 外观
   - button "浅色"
   - button "深色"
+  - button "护眼"
   - button "跟随系统" [pressed]
   - text: 字号大小 仅影响会话内容的字号 14
   - button "增大字号"

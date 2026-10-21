@@ -1004,6 +1004,23 @@ export const IconDarkOutlineMedium = (props: IconProps) => (
   <IconDarkOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
 
+const IconEyeOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
+    <path d="M1.5 8C2.7 5.2 5.1 3.5 8 3.5C10.9 3.5 13.3 5.2 14.5 8C13.3 10.8 10.9 12.5 8 12.5C5.1 12.5 2.7 10.8 1.5 8Z" stroke="currentColor" />
+    <circle cx="8" cy="8" r="2.25" stroke="currentColor" />
+  </svg>
+)
+
+/** Regular one-pixel IconEyeOutline artwork. */
+export const IconEyeOutlineRegular = (props: IconProps) => (
+  <IconEyeOutlineArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
+)
+
+/** Medium IconEyeOutline artwork with a 1.3px stroke. */
+export const IconEyeOutlineMedium = (props: IconProps) => (
+  <IconEyeOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
+)
+
 const IconFollowsystemOutlineArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={strokeWidth}>
     <path d="M13.5 2.5H2.5C1.94772 2.5 1.5 2.94772 1.5 3.5V11.5C1.5 12.0523 1.94772 12.5 2.5 12.5H13.5C14.0523 12.5 14.5 12.0523 14.5 11.5V3.5C14.5 2.94772 14.0523 2.5 13.5 2.5Z" stroke="currentColor" />

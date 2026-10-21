@@ -32,6 +32,8 @@ describe('ui-theme host', () => {
     expect(plainConfig(configuration.fiber.config)).toEqual({ preference: 'dark', fontSize: 10, codeFontSize: 16, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '"Iosevka"', terminalFontFamily: '' })
     await configuration.update({ fontSize: 22 })
     expect(plainConfig(configuration.fiber.config)).toMatchObject({ preference: 'dark', fontSize: 22 })
+    await configuration.update({ preference: 'eye-care' })
+    expect(plainConfig(configuration.fiber.config)).toMatchObject({ preference: 'eye-care' })
     await expect(configuration.update({ preference: 'sepia' })).rejects.toThrow()
     await expect(configuration.update({ fontSize: 9 })).rejects.toThrow()
     await expect(configuration.update({ fontSize: 23 })).rejects.toThrow()

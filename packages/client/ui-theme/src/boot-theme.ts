@@ -8,12 +8,13 @@
 
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import {
-  DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, FONT_ROLES, FONT_SIZE_SPECS, fontFamilyVariable, normalizeFontFamily,
-  type FontFamilies, type FontSizes, type ThemePreference,
+  DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, EYE_CARE_BACKGROUND, FONT_ROLES, FONT_SIZE_SPECS, fontFamilyVariable,
+  normalizeFontFamily, type FontFamilies, type FontSizes, type ThemePreference,
 } from './theme-settings.ts'
 
 const LIGHT_BACKGROUND = '#fff'
 const DARK_BACKGROUND = '#151517'
+const EYE_CARE_STYLE = `:root{color-scheme:light}body{background-color:${EYE_CARE_BACKGROUND};--dsh-boot-bg:${EYE_CARE_BACKGROUND}}`
 
 /** CSS that colors the document canvas before any script executes. */
 function bootThemeStyle(preference: ThemePreference): string {
@@ -21,6 +22,7 @@ function bootThemeStyle(preference: ThemePreference): string {
   const dark = `:root{color-scheme:dark}body{background-color:${DARK_BACKGROUND};--dsh-boot-bg:${DARK_BACKGROUND}}`
   if (preference === 'light') return light
   if (preference === 'dark') return dark
+  if (preference === 'eye-care') return EYE_CARE_STYLE
   return `${light}@media(prefers-color-scheme:dark){${dark}}`
 }
 
@@ -38,7 +40,7 @@ function bootThemeBodyScript(preference: ThemePreference, fontSizes: FontSizes, 
     && typeof matchMedia !== 'undefined'
     && matchMedia('(prefers-color-scheme: dark)').matches
   const dark = preference === 'dark' || systemDark
-  document.documentElement.dataset.dsThemeSource = preference
+  document.documentElement.dataset.dsThemeSource = preference === 'system' ? 'system' : (dark ? 'dark' : 'light')
   document.body.toggleAttribute('data-ds-dark-theme', dark)${sizes}${families}
 })()`
 }

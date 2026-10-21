@@ -1,7 +1,7 @@
 /**
  * Browser theme registry over the `--dsw-*` token stylesheets. The service
- * owns the live theme preference (light/dark/system), resolves `system` through
- * `prefers-color-scheme`, and publishes immutable snapshots; it never touches
+ * owns the live theme preference (light/dark/eye-care/system), resolves `system`
+ * through `prefers-color-scheme`, and publishes immutable snapshots; it never touches
  * the DOM — ui-layout's presenter consumes the resolved snapshot. The Host
  * settings scope loads and stores the preference in the user-settings
  * document. The plugin also registers the Appearance and font settings rows
@@ -27,7 +27,7 @@ import { createAppearanceRowStore, createFontRowStore } from './settings-store.t
 import { installThemeStyles } from './styles.ts'
 import { en, zh, type ThemeKey } from './locales.ts'
 import {
-  DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, FONT_FAMILY_FIELDS, FONT_ROLES, FONT_SIZE_SPECS,
+  DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, EYE_CARE_BACKGROUND, FONT_FAMILY_FIELDS, FONT_ROLES, FONT_SIZE_SPECS,
   fontFamilyVariable, isFontSize, isThemePreference, normalizeFontFamily, sectionFontSizes,
   THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
   type FontFamilies, type FontRole, type FontSizes, type ThemePreference, type ThemeSettings,
@@ -129,9 +129,50 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/**
+ * Eye-care palette: the light base with green-tinted surfaces so the document
+ * canvas keeps the requested muted green while raised surfaces stay lighter.
+ */
+const EYE_CARE_TOKENS: ThemeTokens = Object.freeze({
+  '--dsw-alias-bg-base': EYE_CARE_BACKGROUND,
+  '--dsw-alias-bg-document-preview': '#D4EFD8',
+  '--dsw-alias-bg-layer-1': '#D9F2DC',
+  '--dsw-alias-bg-layer-2': '#E2F6E4',
+  '--dsw-alias-bg-layer-3': '#EBF9EC',
+  '--dsw-alias-bg-overlay': '#D9F2DC',
+  '--dsw-alias-bg-module-platform': '#D9F2DC',
+  '--dsw-alias-bg-multi-select': '#D9F2DC',
+  '--dsw-alias-menu-group-header-fill': 'rgba(226, 246, 228, 0.94)',
+  '--dsw-alias-menu-surface-fill': 'rgba(226, 246, 228, 0.58)',
+  '--dsw-alias-markdown-citation': '#DDF4E0',
+  '--dsw-alias-markdown-code-block-banner': '#E2F6E4',
+  '--dsw-alias-markdown-code-block': '#E2F6E4',
+  '--dsw-alias-markdown-code-segment-unselected': '#D9F2DC',
+  '--dsw-alias-markdown-inline-code': '#DDF4E0',
+  '--dsw-alias-markdown-placeholder': '#D9F2DC',
+  '--dsw-alias-markdown-tag': '#D9F2DC',
+  '--dsw-alias-scrollbar-bg-l1': '#D4EFD8',
+  '--dsw-alias-scrollbar-bg-l2': '#D4EFD8',
+  '--dsw-alias-scrollbar-hover-l1': '#B9E3BF',
+  '--dsw-alias-scrollbar-hover-l2': '#B9E3BF',
+  '--dsw-alias-button-elevated-fill': '#E2F6E4',
+  '--dsw-alias-button-floating-fill': '#E2F6E4',
+  '--dsw-alias-button-floating-hover': '#D9F2DC',
+  '--dsw-specific-bubble': '#E2F6E4',
+  '--dsw-specific-bubble-highlight': '#D4EFD8',
+  '--dsw-specific-input-major': '#E2F6E4',
+  '--dsw-specific-login-input': '#D9F2DC',
+  '--dsw-specific-selector': '#D9F2DC',
+  '--dsw-specific-sidebar-fill': '#D4EFD8',
+  '--dsw-specific-sidebar-nav-item-active': '#D9F2DC',
+  '--dsw-specific-sidebar-nav-item-hover': '#D4EFD8',
+  '--dsw-specific-tip': '#D9F2DC',
+})
+
 const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze([
   Object.freeze({ id: 'light', colorScheme: 'light' as const, tokens: Object.freeze({}) }),
   Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
+  Object.freeze({ id: 'eye-care', colorScheme: 'light' as const, tokens: EYE_CARE_TOKENS }),
 ])
 
 const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
@@ -152,9 +193,10 @@ const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
 ])
 
 /**
- * Theme registry and preference owner. `light`/`dark` are built in (the base
- * stylesheets carry both palettes); third-party themes register alias-layer
- * overrides. Reads go through {@link getTheme}; preference writes only
+ * Theme registry and preference owner. `light`, `dark`, and `eye-care` are
+ * built in (the base stylesheets carry both palettes; eye-care overrides
+ * background aliases over the light palette); third-party themes register
+ * alias-layer overrides. Reads go through {@link getTheme}; preference writes only
  * through {@link setTheme}; continuous sync only through the `theme/change`
  * event. {@link overrideTokens} stacks partial token layers over the active
  * theme without touching the registry.

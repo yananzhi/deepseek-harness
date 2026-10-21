@@ -3,7 +3,10 @@
 import z from '@deepseek-ai/schemastery'
 
 /** Built-in preferences accepted at the registry and settings boundaries. */
-export const THEME_PREFERENCES = ['light', 'dark', 'system'] as const
+export const THEME_PREFERENCES = ['light', 'dark', 'eye-care', 'system'] as const
+
+/** Eye-care document background: the muted green canvas color. */
+export const EYE_CARE_BACKGROUND = '#C7EDCC'
 
 /** Settings namespace owned by the theme plugin. */
 export const THEME_SETTINGS_NAMESPACE = 'ui-theme'

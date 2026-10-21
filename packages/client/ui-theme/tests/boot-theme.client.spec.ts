@@ -41,6 +41,16 @@ describe('theme bootstrap row', () => {
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(true)
   })
 
+  it('paints the eye-care canvas green and reports the light source', () => {
+    mockSystemDark(true)
+    const [head] = bootThemeInjections('eye-care')
+    if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
+    expect(head.text).toBe(':root{color-scheme:light}body{background-color:#C7EDCC;--dsh-boot-bg:#C7EDCC}')
+    executeBootstrap('eye-care')
+    expect(document.documentElement.dataset.dsThemeSource).toBe('light')
+    expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
+  })
+
   it('lets durable light override a dark OS and clears stale dark state', () => {
     document.body.setAttribute(DARK_ATTRIBUTE, '')
     mockSystemDark(true)

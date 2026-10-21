@@ -21,6 +21,7 @@ const COPY: Record<string, string> = {
   'appearance.title': 'Appearance',
   'appearance.light': 'Light',
   'appearance.dark': 'Dark',
+  'appearance.eyeCare': 'Eye care',
   'appearance.system': 'System',
 }
 
@@ -64,12 +65,19 @@ const pressed = (name: RegExp): string | null =>
   screen.getByRole('button', { name }).getAttribute('aria-pressed')
 
 describe('AppearanceRow', () => {
-  it('renders the title and three cubes with the preference cube selected', () => {
+  it('renders the title and four cubes with the preference cube selected', () => {
     mount('dark')
     expect(screen.getByText('Appearance')).toBeDefined()
     expect(pressed(/Dark/)).toBe('true')
     expect(pressed(/Light/)).toBe('false')
+    expect(pressed(/Eye care/)).toBe('false')
     expect(pressed(/System/)).toBe('false')
+  })
+
+  it('selects the eye-care cube from the persisted preference', () => {
+    mount('eye-care')
+    expect(pressed(/Eye care/)).toBe('true')
+    expect(pressed(/Light/)).toBe('false')
   })
 
   it('click drives setTheme; selection follows the store mirror, not the click echo', () => {
